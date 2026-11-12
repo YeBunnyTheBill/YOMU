@@ -1,0 +1,16 @@
+{
+  "name": "YOMU – nauka hiragany i katakany",
+  "short_name": "YOMU",
+  "description": "Trener kany: hiragana, katakana, słowa z anime, pisanie znaków.",
+  "lang": "pl",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#121828",
+  "theme_color": "#121828",
+  "icons": [
+    {"src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable"},
+    {"src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable"}
+  ]
+}
