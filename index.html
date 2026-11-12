@@ -132,6 +132,32 @@ main{display:flex;flex-direction:column;gap:12px}
 .result{font-size:64px;font-weight:800;line-height:1;font-variant-numeric:tabular-nums}
 .muted{color:var(--muted)}
 
+/* plan na dziś */
+.plan{background:var(--panel);border:1px solid var(--line);border-radius:16px;overflow:hidden}
+.plan.ok{border-color:rgba(127,196,106,.55)}
+.plan-head{width:100%;display:flex;align-items:center;gap:10px;padding:11px 14px;font-weight:800;font-size:14px;letter-spacing:.04em;text-align:left}
+.plan-head > span:first-child{flex:1}
+.pcount{font-variant-numeric:tabular-nums;color:var(--accent);font-size:15px}
+.chev{color:var(--muted);transition:transform .2s}
+.plan-head[aria-expanded="true"] .chev{transform:rotate(180deg)}
+.hanko{font-family:var(--f-kana);font-weight:600;color:var(--accent);border:2px solid var(--accent);border-radius:6px;padding:0 5px;font-size:15px;line-height:1.35;transform:rotate(-6deg)}
+.plan-body{padding:0 14px 12px;display:flex;flex-direction:column;gap:10px}
+.plan ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
+.plan li{display:flex;align-items:center;gap:10px;font-size:14px;min-height:34px}
+.plan li .plabel{flex:1}
+.plan li small{color:var(--muted);font-weight:600;margin-left:4px;font-variant-numeric:tabular-nums}
+.pcheck{width:22px;height:22px;flex:none;border-radius:7px;border:2px solid var(--line);display:grid;place-items:center;color:transparent}
+.plan li.got .pcheck{background:var(--good);border-color:var(--good);color:var(--bg)}
+.plan li.got .plabel{color:var(--muted);text-decoration:line-through;text-decoration-color:rgba(152,160,187,.5)}
+.week{display:flex;gap:6px}
+.wday{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;font-size:11px;color:var(--muted);font-weight:600}
+.wday i{display:block;width:100%;max-width:34px;height:8px;border-radius:4px;background:var(--panel2);border:1px solid var(--line)}
+.wday.done i{background:var(--good);border-color:var(--good)}
+.wday.today small{color:var(--text)}
+.wday.today i{border-color:var(--muted)}
+.chip.ok{border-color:var(--good)}
+.chip.ok strong{color:var(--good)}
+
 /* pisanie */
 .board{position:relative;width:min(100%,320px);aspect-ratio:1;border-radius:16px;background:var(--bg);border:1px solid var(--line);touch-action:none;user-select:none;-webkit-user-select:none}
 .board.small{width:min(100%,220px)}
@@ -217,7 +243,7 @@ dialog::backdrop{background:rgba(8,11,20,.72)}
 <div class="app">
   <header class="top">
     <div class="logo" id="logo"><b>YOMU</b><span lang="ja">読む</span></div>
-    <div class="chips"><span class="chip" id="c-streak"></span><span class="chip" id="c-today"></span><button type="button" class="chip" id="c-due"></button></div>
+    <div class="chips"><span class="chip" id="c-streak"></span><button type="button" class="chip" id="c-today"></button><button type="button" class="chip" id="c-due"></button></div>
   </header>
   <div class="goal" id="goal"><i id="goalbar"></i></div>
   <nav class="tabs" role="tablist" id="tabs">
@@ -553,11 +579,12 @@ function dayKey(d = new Date()){
   return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
 }
 const DAY_MIN = 10;
-function streakDays(days, now = new Date()){
+// seria: ile dni z rzędu spełnia warunek isDone(klucz dnia); dzisiaj może jeszcze nie być zaliczone
+function streakDays(isDone, now = new Date()){
   const d = new Date(now);
-  if (!((days[dayKey(d)] || 0) >= DAY_MIN)) d.setDate(d.getDate() - 1);
+  if (!isDone(dayKey(d))) d.setDate(d.getDate() - 1);
   let n = 0;
-  while ((days[dayKey(d)] || 0) >= DAY_MIN){ n++; d.setDate(d.getDate() - 1); }
+  while (isDone(dayKey(d))){ n++; d.setDate(d.getDate() - 1); }
   return n;
 }
 function overlap(a, b){ return a.ro.some(x => b.ro.includes(x)); }
@@ -716,12 +743,14 @@ function judgeStrokes(ref, user, tol = 26){
 const KEY = 'yomu.v1';
 function defaults(){
   return {v:1, view:'cwicz', script:'h', mode:'type', unlocked:{h:['a'], k:['a']}, stats:{}, intro:{}, wstats:{}, days:{}, best:{}, sound:false, goal:50,
-    mix:{}, ach:{}, tally:{listen:0, write:0}, wmode:'look', sakura:false, name:''};
+    mix:{}, ach:{}, tally:{listen:0, write:0}, wmode:'look', sakura:false, name:'',
+    plan:{since:dayKey(), done:{}, cur:null}, dstat:null};
 }
 function migrate(s){
   const now = Date.now();
   [s.stats, s.wstats].forEach(o => Object.values(o).forEach(st => migrateStat(st, now)));
   s.tally = Object.assign({listen:0, write:0}, s.tally);
+  if (!s.plan || !s.plan.done) s.plan = {since:dayKey(), done:{}, cur:null};
   return s;
 }
 function load(){
@@ -748,7 +777,7 @@ function record(id, ok, as){
   if (ok){ st.ok++; st.streak++; } else st.streak = 0;
   srs(st, ok);
   if (ok) easeMix(id); else if (as && as !== id) addMix(id, as);
-  bumpDay(); save(); renderHeader(); checkAch();
+  bumpDay(); save(); renderHeader(); checkAch(); planCheck();
 }
 
 /* ---------- pomyłki ---------- */
@@ -809,12 +838,127 @@ function nextToast(){
   setTimeout(nextToast, TQ.length > 1 ? 2000 : 3200);
 }
 
+/* ---------- plan na dziś ---------- */
+// dni sprzed wprowadzenia planu liczą się po staremu (co najmniej 10 odpowiedzi)
+function dayDone(k){ return !!S.plan.done[k] || (k < S.plan.since && (S.days[k] || 0) >= DAY_MIN); }
+function todayStat(){
+  const d = dayKey();
+  if (!S.dstat || S.dstat.day !== d) S.dstat = {day:d, nw:0, wr:0, wd:0, ls:0, rows:0};
+  return S.dstat;
+}
+function availableWords(){
+  return scripts().reduce((n, sc) => n + (sc === 'h' ? [...WORDS_H, ...PHRASES_H] : WORDS_K).filter(w => wordOk({w:w[0], sc})).length, 0);
+}
+function unseenIds(){
+  return poolFor(scripts(), false).filter(id => !S.intro[id] && !(S.stats[id] && S.stats[id].n));
+}
+// zadania ustalane raz na dzień, żeby plan nie zmieniał się w trakcie
+function ensurePlan(){
+  const d = dayKey();
+  if (S.plan.cur && S.plan.cur.day === d) return S.plan.cur;
+  const tasks = [];
+  const due = dueIds().length;
+  if (due) tasks.push({id:'rev', n:due});
+  tasks.push({id:'goal'});
+  const unseen = unseenIds().length;
+  if (unseen) tasks.push({id:'new', n:Math.min(5, unseen)});
+  else if (suggestion()) tasks.push({id:'row'});
+  tasks.push({id:'write', n:3});
+  if (availableWords() >= 5) tasks.push({id:'words', n:10});
+  if (jaVoice) tasks.push({id:'listen', n:10});
+  const cur = {day:d, tasks, got:{}};
+  S.plan.cur = cur;
+  tasks.forEach(t => { if (taskState(t).done) cur.got[t.id] = 1; });
+  save();
+  return cur;
+}
+function taskState(t){
+  const ds = todayStat();
+  const prog = (have, need) => ({done: have >= need, txt: `${Math.min(have, need)}/${need}`});
+  switch (t.id){
+    case 'rev': { const left = dueIds().length; return {done: !left, txt: left ? `zostało ${left}` : '', label: `Powtórz zaległe znaki (${t.n})`}; }
+    case 'goal': return {...prog(S.days[dayKey()] || 0, S.goal), label: `Odpowiedz ${S.goal} razy`};
+    case 'new': return {...prog(ds.nw, t.n), label: `Poznaj ${t.n} ${plural(t.n, 'nowy znak', 'nowe znaki', 'nowych znaków')}`};
+    case 'row': return {done: ds.rows >= 1, txt: '', label: 'Dodaj następny rząd znaków'};
+    case 'write': return {...prog(ds.wr, t.n), label: `Napisz bez błędu ${t.n} znaki w zakładce Pisz`};
+    case 'words': return {...prog(ds.wd, t.n), label: `Przeczytaj ${t.n} słów`};
+    case 'listen': return {...prog(ds.ls, t.n), label: `Ze słuchu: ${t.n} dobrych odpowiedzi`};
+  }
+  return {done: true, txt: '', label: ''};
+}
+let planOpen = null;
+function planCheck(){
+  const p = ensurePlan();
+  p.tasks.forEach(t => {
+    if (p.got[t.id]) return;
+    const s = taskState(t);
+    if (s.done){ p.got[t.id] = 1; toast(`✓ ${s.label}`); }
+  });
+  if (p.tasks.every(t => p.got[t.id]) && !S.plan.done[p.day]){
+    S.plan.done[p.day] = 1;
+    toast(`<span class="jp" lang="ja">合格</span> Dzień zaliczony! Seria: <b>${streakDays(dayDone)}</b> ${dni(streakDays(dayDone))}`);
+    planOpen = null;
+    checkAch();
+  }
+  save(); renderHeader(); renderPlan();
+}
+const WEEKDAY = ['Nd','Pn','Wt','Śr','Cz','Pt','Sb'];
+function renderPlan(){
+  const el = $('#plan'); if (!el) return;
+  const p = ensurePlan();
+  const dayOk = !!S.plan.done[p.day];
+  const open = planOpen == null ? !dayOk : planOpen;
+  const doneN = p.tasks.filter(t => p.got[t.id]).length;
+  const week = [];
+  for (let i = 6; i >= 0; i--){
+    const d = new Date(); d.setDate(d.getDate() - i);
+    const k = dayKey(d);
+    week.push(`<span class="wday ${dayDone(k) ? 'done' : ''} ${i ? '' : 'today'}" title="${k}"><small>${WEEKDAY[d.getDay()]}</small><i></i></span>`);
+  }
+  const CHECK = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5 10 17 19 7"/></svg>';
+  el.className = 'plan' + (dayOk ? ' ok' : '');
+  el.innerHTML = `
+    <button type="button" class="plan-head" id="planTog" aria-expanded="${open}">
+      <span>Plan na dziś</span>
+      ${dayOk ? '<span class="hanko" lang="ja">合格</span>' : `<span class="pcount">${doneN}/${p.tasks.length}</span>`}
+      <svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+    </button>
+    <div class="plan-body" ${open ? '' : 'hidden'}>
+      <ul>${p.tasks.map(t => {
+        const s = taskState(t), got = !!p.got[t.id];
+        return `<li class="${got ? 'got' : ''}"><span class="pcheck">${CHECK}</span><span class="plabel">${s.label}${!got && s.txt ? ` <small>${s.txt}</small>` : ''}</span>${got ? '' : `<button type="button" class="btn small" data-go="${t.id}">Idź</button>`}</li>`;
+      }).join('')}</ul>
+      <div class="week" aria-label="Ostatnie 7 dni">${week.join('')}</div>
+      <p class="help" style="text-align:left">${dayOk ? 'Dzień zaliczony. Możesz ćwiczyć dalej, wszystko liczy się do postępów.' : 'Zadania odhaczają się same. Cały plan to zaliczony dzień i +1 do serii.'}</p>
+    </div>`;
+  $('#planTog').onclick = () => { planOpen = !open; renderPlan(); };
+  el.querySelectorAll('[data-go]').forEach(b => b.onclick = () => planGo(b.dataset.go));
+}
+function planGo(id){
+  if (id === 'rev'){ startReview(); return; }
+  if (id === 'write'){ S.view = 'pisz'; }
+  else if (id === 'words'){ S.view = 'slowa'; }
+  else if (id === 'row'){ S.view = suggestion() ? 'cwicz' : 'tabela'; }
+  else if (id === 'listen'){ S.view = 'cwicz'; S.mode = 'listen'; }
+  else { S.view = 'cwicz'; if (S.mode === 'listen' && !jaVoice) S.mode = 'type'; }
+  save(); render();
+  const target = S.view === 'cwicz' ? ($('#in') || $('#card')) : $('#card');
+  if (target) target.scrollIntoView({behavior:'smooth', block:'center'});
+}
+$('#c-today').addEventListener('click', () => {
+  planOpen = true;
+  if (S.view !== 'cwicz'){ S.view = 'cwicz'; save(); render(); } else renderPlan();
+  window.scrollTo({top:0, behavior:'smooth'});
+});
+
 /* ---------- osiągnięcia ---------- */
 // [id, znak, nazwa, opis, ukryte]
 const ACH = [
   ['first','一','Pierwszy krok','Pierwsza dobra odpowiedź'],
   ['a100','百','Setka','100 odpowiedzi'],
   ['a1000','千','Tysiąc','1000 odpowiedzi'],
+  ['plan1','合','Zaliczone!','Pierwszy dzień z całym planem'],
+  ['plan10','十','Dziesięć dni','10 zaliczonych dni (nie muszą być z rzędu)'],
   ['s3','三','Trzy dni','Seria 3 dni'],
   ['s7','七','Tydzień','Seria 7 dni'],
   ['s30','月','Miesiąc','Seria 30 dni'],
@@ -847,7 +991,8 @@ const allLv = (sc, grp) => ROWS[sc].filter(r => !grp || r.grp === grp).flatMap(r
 const bestSprint = () => Math.max(0, ...Object.values(S.best));
 const ACH_TEST = {
   first: () => sumOk() >= 1, a100: () => sumAns() >= 100, a1000: () => sumAns() >= 1000,
-  s3: () => streakDays(S.days) >= 3, s7: () => streakDays(S.days) >= 7, s30: () => streakDays(S.days) >= 30,
+  s3: () => streakDays(dayDone) >= 3, s7: () => streakDays(dayDone) >= 7, s30: () => streakDays(dayDone) >= 30,
+  plan1: () => Object.keys(S.plan.done).length >= 1, plan10: () => Object.keys(S.plan.done).length >= 10,
   hb: () => allLv('h','podst'), kb: () => allLv('k','podst'), ha: () => allLv('h'), ka: () => allLv('k'),
   m10: () => Object.values(S.stats).filter(s => level(s) === 3).length >= 10,
   w10: () => Object.values(S.wstats).filter(s => level(s) >= 2).length >= 10,
@@ -963,12 +1108,14 @@ const layer = (svg, name) => svg.querySelector(`[data-l="${name}"]`);
 
 /* ---------- nagłówek i zakładki ---------- */
 function renderHeader(){
-  const n = streakDays(S.days);
+  const n = streakDays(dayDone);
   const c = S.days[dayKey()] || 0;
   const due = dueIds().length;
+  const pl = ensurePlan(), pd = pl.tasks.filter(t => pl.got[t.id]).length, dayOk = !!S.plan.done[pl.day];
   $('#c-streak').innerHTML = `Seria <strong>${n}</strong> ${dni(n)}`;
   $('#c-streak').classList.toggle('hot', n > 0);
-  $('#c-today').innerHTML = `Dziś <strong>${c}</strong>/${S.goal}`;
+  $('#c-today').innerHTML = dayOk ? 'Plan <strong>✓</strong>' : `Plan <strong>${pd}</strong>/${pl.tasks.length}`;
+  $('#c-today').classList.toggle('ok', dayOk);
   $('#c-due').innerHTML = `Powtórki <strong>${due}</strong>`;
   $('#c-due').classList.toggle('hot', due > 0);
   $('#goalbar').style.width = Math.min(100, c / S.goal * 100) + '%';
@@ -1074,8 +1221,8 @@ function renderBanner(){
   if (b('mixgo')) b('mixgo').onclick = startMix;
   if (b('addrow')) b('addrow').onclick = () => {
     const sc = el.dataset.sc, row = el.dataset.row;
-    if (!S.unlocked[sc].includes(row)) S.unlocked[sc].push(row);
-    save(); toast(`Dodano rząd <span class="jp" lang="ja">${rowLabel(sc, row)}</span>`); renderBanner();
+    if (!S.unlocked[sc].includes(row)){ S.unlocked[sc].push(row); todayStat().rows++; }
+    save(); planCheck(); toast(`Dodano rząd <span class="jp" lang="ja">${rowLabel(sc, row)}</span>`); renderBanner();
   };
 }
 function showMnemo(id){
@@ -1095,6 +1242,7 @@ function renderPractice(m){
   };
   const listen = S.mode === 'listen';
   m.innerHTML = `
+    <section class="plan" id="plan"></section>
     <div class="controls">${scriptSeg()}
       <div class="seg" role="group" aria-label="Tryb">${modes.map(([v,l]) => `<button type="button" data-mode="${v}" aria-pressed="${S.mode===v}">${l}</button>`).join('')}</div>
     </div>
@@ -1127,6 +1275,7 @@ function renderPractice(m){
     $('#choices').addEventListener('click', e => { const b = e.target.closest('button'); if (b) choose(+b.dataset.i); });
   }
   P.retry = []; P.recent = [];
+  renderPlan();
   nextQ();
 }
 
@@ -1206,7 +1355,7 @@ function nextQ(){
   $('#hint').innerHTML = '&nbsp;';
 }
 function advance(){
-  if (P.phase === 'intro' && S.mode !== 'type'){ S.intro[P.id] = 1; save(); }
+  if (P.phase === 'intro' && S.mode !== 'type'){ S.intro[P.id] = 1; todayStat().nw++; save(); planCheck(); }
   if (P.phase === 'wrong' || P.phase === 'intro' || P.phase === 'done'){ $('#next').textContent = 'Dalej'; nextQ(); }
 }
 function onEnter(){
@@ -1224,7 +1373,7 @@ function onTypeInput(){
   const card = $('#card');
   const j = judgeTyped(it, v);
   if (j.res === 'ok'){
-    if (P.phase === 'intro'){ S.intro[it.id] = 1; save(); }
+    if (P.phase === 'intro'){ S.intro[it.id] = 1; todayStat().nw++; save(); planCheck(); }
     else { record(it.id, true); focusAfter(it.id, true); }
     P.phase = 'done';
     card.classList.add('ok');
@@ -1265,7 +1414,7 @@ function choose(i){
   const listen = S.mode === 'listen';
   if (listen){
     const big = $('#big'); big.className = 'big'; big.textContent = it.ch;
-    if (ok){ S.tally.listen++; save(); checkAch(); }
+    if (ok){ S.tally.listen++; todayStat().ls++; save(); checkAch(); planCheck(); }
   } else if (S.sound) say(it.ch);
   if (ok){
     P.phase = 'done';
@@ -1364,7 +1513,8 @@ function wordRecord(ok){
   const st = S.wstats[W.word.w] || (S.wstats[W.word.w] = {n:0, ok:0, streak:0, iv:0, due:0});
   st.n++; if (ok){ st.ok++; st.streak++; } else st.streak = 0;
   srs(st, ok);
-  bumpDay(); save(); renderHeader(); checkAch();
+  todayStat().wd++;
+  bumpDay(); save(); renderHeader(); checkAch(); planCheck();
 }
 function wordSubmit(){
   if (W.phase === 'done'){ nextWord(); return; }
@@ -1545,7 +1695,7 @@ function writeCheck(){
   if (res.every(r => r === 'ok')){
     card.className = 'card ok';
     $('#hint').innerHTML = `<b>Świetnie!</b> ${n} ${plural(n, 'kreska', 'kreski', 'kresek')}, wszystkie w dobrej kolejności i kierunku.`;
-    S.tally.write++; save(); checkAch();
+    S.tally.write++; todayStat().wr++; save(); checkAch(); planCheck();
     if (S.sound) say(WR.ch);
     return;
   }
@@ -1788,7 +1938,7 @@ function renderTable(m){
           ? `<button type="button" class="tog" id="snd" aria-pressed="${S.sound}" aria-label="Czytaj na głos"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5 10 17 19 7"/></svg></button>`
           : '<span class="muted" style="font-size:13px">Ta przeglądarka nie ma japońskiego głosu</span>'}
       </div>
-      <p>Seria rośnie, gdy w danym dniu odpowiesz co najmniej ${DAY_MIN} razy. Znak, na który dobrze odpowiesz, wraca do powtórki po 1, 3, 7, 14 dniach i dalej.</p>
+      <p>Seria rośnie za każdy dzień z zaliczonym planem na dziś (plan jest na górze zakładki Ćwicz). Znak, na który dobrze odpowiesz, wraca do powtórki po 1, 3, 7, 14 dniach i dalej.</p>
     </div>
     <div class="panel">
       <div class="line"><span>Aplikacja na telefonie</span>${installHtml}</div>
@@ -1816,8 +1966,8 @@ function renderTable(m){
   document.querySelectorAll('[data-row]').forEach(b => b.onclick = () => {
     const list = S.unlocked[tableSc], r = b.dataset.row;
     const i = list.indexOf(r);
-    if (i >= 0) list.splice(i, 1); else list.push(r);
-    save(); renderTable(m); renderHeader();
+    if (i >= 0) list.splice(i, 1); else { list.push(r); todayStat().rows++; }
+    save(); planCheck(); renderTable(m); renderHeader();
   });
   document.querySelectorAll('[data-goal]').forEach(b => b.onclick = () => { S.goal = +b.dataset.goal; save(); renderHeader(); renderTable(m); });
   const snd = $('#snd'); if (snd) snd.onclick = () => { S.sound = !S.sound; save(); if (S.sound) say('よむ'); renderTable(m); };
@@ -1847,7 +1997,7 @@ function renderTable(m){
   const r1 = $('#reset1'); if (r1) r1.onclick = () => { confirmReset = true; renderTable(m); };
   const r0 = $('#reset0'); if (r0) r0.onclick = () => { confirmReset = false; renderTable(m); };
   const r2 = $('#reset2'); if (r2) r2.onclick = () => {
-    const keep = {goal:S.goal, sound:S.sound, script:S.script, mode:S.mode, wmode:S.wmode, sakura:S.sakura, name:S.name};
+    const keep = {goal:S.goal, sound:S.sound, script:S.script, mode:S.mode, wmode:S.wmode, sakura:S.sakura, name:S.name, plan:{since:dayKey(), done:{}, cur:null}};
     S = Object.assign(defaults(), keep, {view:'tabela'}); save(); confirmReset = false; P.focus = null;
     toast('Postępy wyzerowane'); render();
   };
