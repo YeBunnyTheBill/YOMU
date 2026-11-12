@@ -1,0 +1,967 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#121828">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<title>YOMU trener kany</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Klee+One:wght@400;600&family=Manrope:wght@400;600;800&family=Zen+Kaku+Gothic+New:wght@400;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  /* układ: jedna kolumna jak fiszka, duży znak na środku, sterowanie pod kciukiem */
+  --bg:#121828;
+  --panel:#1a2137;
+  --panel2:#232b47;
+  --line:#303a5c;
+  --text:#efe9dc;
+  --muted:#98a0bb;
+  --accent:#ef5b3a;
+  --accent-ink:#1d0b05;
+  --good:#7fc46a;
+  --bad:#ff5f78;
+  --known:#d9ae4f;
+  --learn:#6874a6;
+  --f-kana:"Klee One","Hiragino Mincho ProN","Yu Mincho",serif;
+  --f-ui:"Manrope","Zen Kaku Gothic New","Hiragino Sans","Yu Gothic UI","Meiryo",system-ui,sans-serif;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--text);font-family:var(--f-ui);font-size:16px;line-height:1.45;display:flex;justify-content:center;-webkit-tap-highlight-color:transparent}
+.app{width:100%;max-width:560px;min-height:100%;padding:16px 16px calc(28px + env(safe-area-inset-bottom));display:flex;flex-direction:column;gap:14px}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer;padding:0}
+button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+[hidden]{display:none!important}
+b,strong{font-weight:800}
+
+.top{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.logo{display:flex;align-items:baseline;gap:8px}
+.logo b{letter-spacing:.2em;font-size:19px}
+.logo span{font-family:var(--f-kana);color:var(--accent);font-size:21px;font-weight:600}
+.chips{display:flex;gap:8px;flex-wrap:wrap}
+.chip{font-size:13px;padding:5px 11px;border-radius:999px;background:var(--panel);border:1px solid var(--line);color:var(--muted);white-space:nowrap;font-variant-numeric:tabular-nums}
+.chip strong{color:var(--text)}
+.chip.hot{border-color:var(--accent)}
+.chip.hot strong{color:var(--accent)}
+.goal{height:4px;background:var(--panel);border-radius:2px;overflow:hidden;margin-top:-6px}
+.goal i{display:block;height:100%;width:0;background:var(--accent);transition:width .3s}
+.goal.done i{background:var(--good)}
+
+.tabs{display:grid;grid-template-columns:repeat(4,1fr);gap:4px;background:var(--panel);padding:4px;border-radius:14px;border:1px solid var(--line)}
+.tabs button{padding:9px 4px;border-radius:10px;font-weight:600;font-size:14px;color:var(--muted)}
+.tabs button[aria-selected="true"]{background:var(--panel2);color:var(--text);box-shadow:inset 0 -2px 0 var(--accent)}
+
+main{display:flex;flex-direction:column;gap:12px}
+.controls{display:flex;gap:8px;flex-wrap:wrap}
+.seg{display:flex;gap:2px;background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:3px;flex:1 1 auto}
+.seg button{flex:1;padding:7px 10px;border-radius:8px;font-size:13px;font-weight:600;color:var(--muted);white-space:nowrap}
+.seg button[aria-pressed="true"]{background:var(--panel2);color:var(--text)}
+.seg .jp{font-family:var(--f-kana);margin-left:4px}
+
+.card{position:relative;background:var(--panel);border:1px solid var(--line);border-radius:20px;padding:22px 18px 18px;display:flex;flex-direction:column;align-items:center;gap:14px;transition:border-color .15s}
+.card.ok{border-color:var(--good)}
+.card.ok .big{color:var(--good)}
+.card.no{border-color:var(--bad)}
+.card.shake{animation:shake .3s}
+@keyframes shake{25%{transform:translateX(-6px)}50%{transform:translateX(5px)}75%{transform:translateX(-3px)}}
+@media (prefers-reduced-motion:reduce){.card.shake{animation:none}.goal i{transition:none}}
+.badge{position:absolute;top:12px;left:12px;font-size:11px;letter-spacing:.12em;text-transform:uppercase;background:var(--accent);color:var(--accent-ink);padding:3px 8px;border-radius:6px;font-weight:800}
+.speak{position:absolute;top:8px;right:8px;width:40px;height:40px;border-radius:10px;display:grid;place-items:center;color:var(--muted)}
+.speak:hover{background:var(--panel2);color:var(--text)}
+.big{font-family:var(--f-kana);font-weight:600;font-size:clamp(108px,32vw,164px);line-height:1.05;text-align:center;min-height:1.05em;transition:color .15s}
+.big.word{font-size:clamp(46px,13vw,80px);line-height:1.2;padding-top:10px;word-break:keep-all}
+.big.roma{font-family:var(--f-ui);font-weight:800;font-size:clamp(64px,20vw,104px);letter-spacing:.02em}
+.hint{color:var(--muted);min-height:1.45em;font-size:15px;text-align:center;max-width:42ch}
+.hint b{color:var(--text)}
+.hint .jp{font-family:var(--f-kana);font-size:1.2em;color:var(--text)}
+.answer{width:100%}
+.answer input{width:100%;font:inherit;font-size:28px;font-weight:600;letter-spacing:.06em;text-align:center;padding:12px;border-radius:14px;border:2px solid var(--line);background:var(--bg);color:var(--text);outline:none}
+.answer input:focus{border-color:var(--learn)}
+.card.ok .answer input{border-color:var(--good)}
+.card.no .answer input{border-color:var(--bad)}
+.answer input::placeholder{color:#4d5779;font-weight:400;letter-spacing:0;font-size:18px}
+.actions{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
+.btn{padding:10px 18px;border-radius:12px;background:var(--panel2);border:1px solid var(--line);font-weight:600;font-size:15px}
+.btn:hover{border-color:var(--muted)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:800}
+.btn.small{padding:7px 12px;font-size:13px}
+.btn.danger{border-color:var(--bad);color:var(--bad)}
+
+.choices{display:grid;grid-template-columns:1fr 1fr;gap:10px;width:100%}
+.choices button{position:relative;background:var(--panel2);border:1px solid var(--line);border-radius:14px;padding:14px 8px;font-family:var(--f-kana);font-size:36px;font-weight:600;line-height:1.2;min-height:76px}
+.choices button.roma{font-family:var(--f-ui);font-size:24px;font-weight:800}
+.choices button:hover{border-color:var(--muted)}
+.choices button .n{position:absolute;top:6px;left:9px;font-family:var(--f-ui);font-size:11px;font-weight:600;color:#59638a}
+.choices button.right{border-color:var(--good);color:var(--good);background:rgba(127,196,106,.1)}
+.choices button.wrong{border-color:var(--bad);color:var(--bad);background:rgba(255,95,120,.08)}
+
+.help{margin:0;font-size:13px;color:var(--muted);text-align:center}
+#banner:empty{display:none}
+.note{background:var(--panel2);border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:12px;padding:10px 12px 10px 14px;display:flex;gap:12px;align-items:center;justify-content:space-between;font-size:14px}
+.note .jp{font-family:var(--f-kana);font-size:1.15em}
+
+.sprint-bar{display:flex;justify-content:space-between;align-items:baseline;font-variant-numeric:tabular-nums}
+.sprint-bar .score{font-size:28px;font-weight:800}
+.sprint-bar .time{font-size:22px;font-weight:800;color:var(--accent)}
+.sprint-bar small{font-size:13px;color:var(--muted);font-weight:600;margin-right:6px}
+.timebar{height:6px;border-radius:3px;background:var(--panel);overflow:hidden}
+.timebar i{display:block;height:100%;background:var(--accent);width:100%}
+.result{font-size:64px;font-weight:800;line-height:1;font-variant-numeric:tabular-nums}
+.muted{color:var(--muted)}
+
+.summary{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.stat{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px;display:flex;flex-direction:column;gap:2px;border-top:3px solid var(--line)}
+.stat strong{font-size:22px;font-variant-numeric:tabular-nums}
+.stat span{font-size:12px;color:var(--muted)}
+.stat.l0{border-top-color:var(--line)}
+.stat.l1{border-top-color:var(--learn)}
+.stat.l2{border-top-color:var(--known)}
+.stat.l3{border-top-color:var(--good)}
+h2{font-size:13px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin:8px 0 0;font-weight:800}
+.rows{display:flex;flex-direction:column;gap:6px}
+.row{display:grid;grid-template-columns:40px 1fr;gap:10px;align-items:center;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:7px 8px}
+.row.off .cells{opacity:.45}
+.tog{width:32px;height:32px;border-radius:9px;border:2px solid var(--line);display:grid;place-items:center;color:transparent;justify-self:center}
+.tog[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.cells{display:flex;flex-wrap:wrap;gap:5px}
+.cell{min-width:44px;padding:3px 5px 2px;border-radius:8px;text-align:center;background:var(--panel2);border-bottom:3px solid transparent}
+.cell .k{display:block;font-family:var(--f-kana);font-size:22px;font-weight:600;line-height:1.25}
+.cell .r{display:block;font-size:10px;color:var(--muted);font-weight:600}
+.cell.l1{border-bottom-color:var(--learn)}
+.cell.l2{border-bottom-color:var(--known)}
+.cell.l3{border-bottom-color:var(--good)}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--muted)}
+.legend i{display:inline-block;width:14px;height:3px;border-radius:2px;margin-right:6px;vertical-align:middle}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px;display:flex;flex-direction:column;gap:10px}
+.panel .line{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.panel p{margin:0;font-size:14px;color:var(--muted)}
+textarea{width:100%;min-height:84px;font:12px/1.4 ui-monospace,Consolas,monospace;background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:10px;padding:10px;resize:vertical;word-break:break-all}
+
+.toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom));transform:translateX(-50%);background:var(--text);color:var(--bg);padding:10px 16px;border-radius:12px;font-weight:600;font-size:14px;max-width:min(92vw,460px);text-align:center;box-shadow:0 8px 30px rgba(0,0,0,.4);z-index:5}
+.toast .jp{font-family:var(--f-kana)}
+
+@media (max-width:420px){
+  .summary{grid-template-columns:repeat(2,1fr)}
+  .tabs button{font-size:13px}
+  .cell{min-width:40px}
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="top">
+    <div class="logo"><b>YOMU</b><span lang="ja">読む</span></div>
+    <div class="chips"><span class="chip" id="c-streak"></span><span class="chip" id="c-today"></span></div>
+  </header>
+  <div class="goal" id="goal"><i id="goalbar"></i></div>
+  <nav class="tabs" role="tablist" id="tabs">
+    <button role="tab" data-v="cwicz" id="t-cwicz">Ćwicz</button>
+    <button role="tab" data-v="slowa" id="t-slowa">Słowa</button>
+    <button role="tab" data-v="sprint" id="t-sprint">Sprint</button>
+    <button role="tab" data-v="tabela" id="t-tabela">Postępy</button>
+  </nav>
+  <main id="main"></main>
+</div>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+// CORE START
+const HIRA_ROWS = [
+  ['a',  'あ:a い:i う:u え:e お:o', 'podst'],
+  ['ka', 'か:ka き:ki く:ku け:ke こ:ko', 'podst'],
+  ['sa', 'さ:sa し:shi/si す:su せ:se そ:so', 'podst'],
+  ['ta', 'た:ta ち:chi/ti つ:tsu/tu て:te と:to', 'podst'],
+  ['na', 'な:na に:ni ぬ:nu ね:ne の:no', 'podst'],
+  ['ha', 'は:ha ひ:hi ふ:fu/hu へ:he ほ:ho', 'podst'],
+  ['ma', 'ま:ma み:mi む:mu め:me も:mo', 'podst'],
+  ['ya', 'や:ya ゆ:yu よ:yo', 'podst'],
+  ['ra', 'ら:ra り:ri る:ru れ:re ろ:ro', 'podst'],
+  ['wa', 'わ:wa を:wo/o ん:n/nn', 'podst'],
+  ['ga', 'が:ga ぎ:gi ぐ:gu げ:ge ご:go', 'dak'],
+  ['za', 'ざ:za じ:ji/zi ず:zu ぜ:ze ぞ:zo', 'dak'],
+  ['da', 'だ:da ぢ:ji/di/dji づ:zu/du/dzu で:de ど:do', 'dak'],
+  ['ba', 'ば:ba び:bi ぶ:bu べ:be ぼ:bo', 'dak'],
+  ['pa', 'ぱ:pa ぴ:pi ぷ:pu ぺ:pe ぽ:po', 'dak'],
+  ['kya','きゃ:kya きゅ:kyu きょ:kyo しゃ:sha/sya しゅ:shu/syu しょ:sho/syo ちゃ:cha/tya/cya ちゅ:chu/tyu/cyu ちょ:cho/tyo/cyo にゃ:nya にゅ:nyu にょ:nyo', 'yoon'],
+  ['hya','ひゃ:hya ひゅ:hyu ひょ:hyo みゃ:mya みゅ:myu みょ:myo りゃ:rya りゅ:ryu りょ:ryo', 'yoon'],
+  ['gya','ぎゃ:gya ぎゅ:gyu ぎょ:gyo じゃ:ja/zya/jya じゅ:ju/zyu/jyu じょ:jo/zyo/jyo びゃ:bya びゅ:byu びょ:byo ぴゃ:pya ぴゅ:pyu ぴょ:pyo', 'yoon']
+];
+const GROUPS = [['podst','Podstawowe'],['dak','Z kreskami i kółkiem (゛ ゜)'],['yoon','Połączenia z małym ゃ ゅ ょ']];
+
+// znaki, które łatwo pomylić: trafiają do odpowiedzi do wyboru jako pierwsze
+const CONFUSE = 'さち きさ ぬめ ねれ れわ ねわ るろ はほ はけ いり うら こに しつ あお あめ すむ たな まも ゆよ シツ ソン シン ツソ クケ フワ ウワ チテ ノメ ユコ マム ルレ ナメ ヌス ワク ホオ';
+
+const WORDS_H = [
+  ['あい','miłość'], ['あお','niebieski'], ['いい','dobry, fajny'], ['いえ','dom'], ['うえ','na górze'], ['え','obraz'],
+  ['かお','twarz'], ['こえ','głos'], ['あき','jesień'], ['きく','słuchać'],
+  ['すごい','niesamowite'], ['かわいい','słodkie, urocze'], ['ありがとう','dziękuję'], ['なに','co?'], ['ばか','głupek'],
+  ['おはよう','dzień dobry (twoje „ohio”)', 'ohio'], ['もしもし','halo (przez telefon)'], ['ねこ','kot'], ['いぬ','pies'],
+  ['さくら','kwiat wiśni'], ['せんせい','nauczyciel'], ['せんぱい','starszy kolega'], ['ともだち','przyjaciel'],
+  ['だいじょうぶ','w porządku, nic mi nie jest'], ['いただきます','smacznego (przed jedzeniem)'], ['おいしい','pyszne'],
+  ['やめて','przestań'], ['まって','czekaj'], ['はい','tak'], ['いいえ','nie'], ['うそ','kłamiesz! / niemożliwe'],
+  ['ほんとう','naprawdę'], ['さようなら','do widzenia'], ['おやすみ','dobranoc'], ['すき','lubię, kocham'],
+  ['だめ','nie wolno, nie'], ['はやく','szybko!'], ['がんばって','dasz radę, powodzenia'], ['よろしく','miło mi / liczę na ciebie'],
+  ['ごめん','sorki'], ['ごめんなさい','przepraszam'], ['おにいちゃん','starszy brat'], ['かみ','bóg / papier / włosy'],
+  ['みず','woda'], ['ひと','człowiek'], ['やま','góra'], ['そら','niebo'], ['ほし','gwiazda'], ['つき','księżyc'],
+  ['ゆき','śnieg'], ['あめ','deszcz'], ['はな','kwiat / nos'], ['て','ręka'], ['うみ','morze'], ['なつ','lato'],
+  ['ふゆ','zima'], ['はる','wiosna'], ['ちから','siła'], ['ゆめ','sen, marzenie'], ['こころ','serce, dusza'],
+  ['いくぞ','jazda! idziemy!'], ['にんじゃ','ninja'], ['さむらい','samuraj'], ['かたな','miecz'], ['おに','demon'],
+  ['きつね','lis'], ['すし','sushi'], ['ねむい','śpiący'], ['たのしい','fajnie, wesoło'], ['しょうねん','chłopak (stąd „shōnen”)'],
+  ['しょうじょ','dziewczyna (stąd „shōjo”)'], ['りゅう','smok'], ['きゅう','dziewięć'], ['ひゃく','sto']
+];
+const WORDS_K = [
+  ['アニメ','anime'], ['マンガ','manga'], ['ゲーム','gra'], ['ラーメン','ramen'], ['コーヒー','kawa'], ['テレビ','telewizor'],
+  ['パン','chleb'], ['カメラ','aparat'], ['ロボット','robot'], ['ピザ','pizza'], ['ホテル','hotel'], ['タクシー','taksówka'],
+  ['バス','autobus'], ['ノート','zeszyt'], ['ペン','długopis'], ['ケーキ','ciasto'], ['アイス','lody'], ['チーズ','ser'],
+  ['ポーランド','Polska'], ['ワルシャワ','Warszawa'], ['トマト','pomidor'], ['バナナ','banan'], ['メロン','melon'],
+  ['ギター','gitara'], ['ドラマ','serial'], ['ヒーロー','bohater'], ['パソコン','komputer'], ['スマホ','smartfon'],
+  ['メール','mail'], ['ニュース','wiadomości'], ['サッカー','piłka nożna'], ['ジュース','sok'], ['ミルク','mleko'], ['ビール','piwo']
+];
+
+const toKata = s => s.replace(/[ぁ-ゖ]/g, c => String.fromCharCode(c.charCodeAt(0) + 0x60));
+
+function buildItems(){
+  const items = {}, rows = {h:[], k:[]};
+  for (const [rid, def, grp] of HIRA_ROWS){
+    for (const sc of ['h','k']){
+      const list = [];
+      def.split(' ').forEach(p => {
+        const [kana, ro] = p.split(':');
+        const ch = sc === 'h' ? kana : toKata(kana);
+        const id = sc + ':' + ch;
+        items[id] = {id, sc, ch, ro: ro.split('/'), row: rid};
+        list.push(id);
+      });
+      rows[sc].push({id: rid, grp, items: list});
+    }
+  }
+  return {items, rows};
+}
+const {items: ITEMS, rows: ROWS} = buildItems();
+const KMAP = {};
+Object.values(ITEMS).forEach(it => { KMAP[it.ch] = it.ro; });
+const CONF = {};
+CONFUSE.split(' ').forEach(pair => {
+  const [a, b] = [...pair];
+  for (const [x, y] of [[a,b],[b,a],[toKata(a),toKata(b)],[toKata(b),toKata(a)]]){
+    (CONF[x] = CONF[x] || new Set()).add(y);
+  }
+});
+
+// słowo → jednostki do sprawdzania; każda ma listę dozwolonych zapisów
+function tokenize(word){
+  const raw = [], chars = [...word];
+  for (let i = 0; i < chars.length; i++){
+    let c = chars[i];
+    if (c === 'っ' || c === 'ッ'){ raw.push({gem:true}); continue; }
+    if (c === 'ー'){ raw.push({long:true}); continue; }
+    const n = chars[i+1];
+    if (n && 'ゃゅょャュョ'.includes(n)){ c += n; i++; }
+    const ro = KMAP[c];
+    if (!ro) throw new Error('Brak znaku ' + c + ' w ' + word);
+    raw.push({k:c, v:ro.slice()});
+  }
+  const out = [];
+  for (let i = 0; i < raw.length; i++){
+    const u = raw[i];
+    if (u.gem){
+      const nx = raw[i+1];
+      const v = [];
+      nx.v.forEach(x => { v.push(x[0] + x); if (x.startsWith('ch')) v.push('t' + x); });
+      out.push({k: (word.includes('ッ') ? 'ッ' : 'っ') + nx.k, base: nx.k, v});
+      i++;
+      continue;
+    }
+    if (u.long){
+      const prev = out[out.length-1];
+      out.push({k:'ー', v:[prev.v[0].slice(-1), '-', '']});
+      continue;
+    }
+    if ((u.k === 'う' || u.k === 'ウ') && out.length && /o$/.test(out[out.length-1].v[0])){
+      out.push({k:u.k, v:['u','o','']});
+      continue;
+    }
+    out.push(u);
+  }
+  return out;
+}
+const NONE = 0, PREFIX = 1, FULL = 2;
+function matchUnits(units, s){
+  const memo = new Map();
+  function rec(ui, si){
+    const key = ui + ',' + si;
+    if (memo.has(key)) return memo.get(key);
+    let best = NONE;
+    if (ui === units.length) best = si === s.length ? FULL : NONE;
+    else {
+      if (si === s.length) best = PREFIX;
+      for (const v of units[ui].v){
+        if (s.startsWith(v, si)){
+          const r = rec(ui + 1, si + v.length);
+          if (r > best) best = r;
+          if (best === FULL) break;
+        } else if (si < s.length && v.startsWith(s.slice(si))){
+          if (best < PREFIX) best = PREFIX;
+        }
+      }
+    }
+    memo.set(key, best);
+    return best;
+  }
+  return rec(0, 0);
+}
+const canon = units => units.map(u => u.v[0]).join('');
+const normalize = s => s.toLowerCase().replace(/[\s'’]/g, '').replace(/[āâ]/g,'aa').replace(/[īî]/g,'ii').replace(/[ūû]/g,'uu').replace(/[ēê]/g,'ee').replace(/[ōô]/g,'ou');
+
+function level(st){
+  if (!st || !st.n) return 0;
+  const acc = st.ok / st.n;
+  if (st.streak >= 6 && acc >= 0.85) return 3;
+  if (st.streak >= 3) return 2;
+  return 1;
+}
+function weight(st){
+  if (!st || !st.n) return 4;
+  const acc = st.ok / st.n;
+  const lv = level(st);
+  let w = 1 + (1 - acc) * 5;
+  if (lv === 3) w *= 0.25; else if (lv === 2) w *= 0.6;
+  if (st.streak === 0) w += 2;
+  return w;
+}
+function pick(pool, stats, recent, rnd = Math.random){
+  let cands = pool.filter(id => !recent.includes(id));
+  if (!cands.length) cands = pool;
+  const ws = cands.map(id => weight(stats[id]));
+  let r = rnd() * ws.reduce((a, b) => a + b, 0);
+  for (let i = 0; i < cands.length; i++){ r -= ws[i]; if (r <= 0) return cands[i]; }
+  return cands[cands.length - 1];
+}
+function dayKey(d = new Date()){
+  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+}
+const DAY_MIN = 10;
+function streakDays(days, now = new Date()){
+  const d = new Date(now);
+  if (!((days[dayKey(d)] || 0) >= DAY_MIN)) d.setDate(d.getDate() - 1);
+  let n = 0;
+  while ((days[dayKey(d)] || 0) >= DAY_MIN){ n++; d.setDate(d.getDate() - 1); }
+  return n;
+}
+function overlap(a, b){ return a.ro.some(x => b.ro.includes(x)); }
+function distractors(it, pool, rnd = Math.random){
+  const cands = pool.filter(id => id !== it.id && !overlap(ITEMS[id], it));
+  const shuffle = a => { for (let i = a.length - 1; i > 0; i--){ const j = Math.floor(rnd() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+  const conf = shuffle(cands.filter(id => CONF[it.ch] && CONF[it.ch].has(ITEMS[id].ch)));
+  const sameRow = shuffle(cands.filter(id => ITEMS[id].row === it.row && !conf.includes(id)));
+  const rest = shuffle(cands.filter(id => !conf.includes(id) && !sameRow.includes(id)));
+  const out = [];
+  for (const id of [...conf.slice(0, 2), ...sameRow, ...rest]){
+    if (out.length >= 3) break;
+    if (!out.some(o => overlap(ITEMS[o], ITEMS[id]))) out.push(id);
+  }
+  return out;
+}
+const WT = {};
+[...WORDS_H, ...WORDS_K].forEach(([w]) => { WT[w] = tokenize(w); });
+// CORE END
+
+/* ---------- stan ---------- */
+const KEY = 'yomu.v1';
+function defaults(){
+  return {v:1, view:'cwicz', script:'h', mode:'type', unlocked:{h:['a'], k:['a']}, stats:{}, intro:{}, wstats:{}, days:{}, best:{}, sound:false, goal:50};
+}
+function load(){
+  try {
+    const s = JSON.parse(localStorage.getItem(KEY));
+    if (s && s.v === 1) return Object.assign(defaults(), s);
+  } catch (e) {}
+  return defaults();
+}
+let S = load();
+function save(){ try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} }
+function bumpDay(){ const d = dayKey(); S.days[d] = (S.days[d] || 0) + 1; }
+function record(id, ok){
+  const st = S.stats[id] || (S.stats[id] = {n:0, ok:0, streak:0});
+  st.n++;
+  if (ok){ st.ok++; st.streak++; } else st.streak = 0;
+  bumpDay(); save(); renderHeader();
+}
+
+/* ---------- pomocnicze ---------- */
+const $ = s => document.querySelector(s);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const scripts = () => S.script === 'b' ? ['h','k'] : [S.script];
+const isUnlocked = id => { const it = ITEMS[id]; return !!it && S.unlocked[it.sc].includes(it.row); };
+function poolFor(scs, reverse){
+  const out = [];
+  scs.forEach(sc => ROWS[sc].forEach(r => {
+    if (!S.unlocked[sc].includes(r.id)) return;
+    r.items.forEach(id => {
+      if (reverse && /^[ぢづヂヅ]$/.test(ITEMS[id].ch)) return; // „ji” i „zu” już są pod じ i ず
+      out.push(id);
+    });
+  }));
+  return out;
+}
+const rowLabel = (sc, rid) => { const r = ROWS[sc].find(x => x.id === rid); const chs = r.items.map(id => ITEMS[id].ch); return chs.length > 5 ? chs.slice(0, 3).join(' ') + ' …' : chs.join(' '); };
+const dni = n => n === 1 ? 'dzień' : 'dni';
+
+let toastT = null;
+function toast(html){
+  const t = $('#toast'); t.innerHTML = html; t.hidden = false;
+  clearTimeout(toastT); toastT = setTimeout(() => { t.hidden = true; }, 3600);
+}
+
+/* ---------- głos ---------- */
+let jaVoice = null;
+function initVoice(){
+  try { jaVoice = speechSynthesis.getVoices().find(v => /^ja/i.test(v.lang)) || null; } catch (e) { jaVoice = null; }
+  document.querySelectorAll('.speak').forEach(b => { b.hidden = !jaVoice; });
+}
+if ('speechSynthesis' in window){ initVoice(); try { speechSynthesis.onvoiceschanged = initVoice; } catch (e) {} }
+function say(t){
+  if (!jaVoice) return;
+  try { speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance(t); u.voice = jaVoice; u.lang = 'ja-JP'; u.rate = 0.85; speechSynthesis.speak(u); } catch (e) {}
+}
+const SPEAK_ICON = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/></svg>';
+const speakBtn = () => `<button class="speak" id="speak" type="button" aria-label="Posłuchaj wymowy" ${jaVoice ? '' : 'hidden'}>${SPEAK_ICON}</button>`;
+
+/* ---------- nagłówek i zakładki ---------- */
+function renderHeader(){
+  const n = streakDays(S.days);
+  const c = S.days[dayKey()] || 0;
+  $('#c-streak').innerHTML = `Seria <strong>${n}</strong> ${dni(n)}`;
+  $('#c-streak').classList.toggle('hot', n > 0);
+  $('#c-today').innerHTML = `Dziś <strong>${c}</strong>/${S.goal}`;
+  $('#goalbar').style.width = Math.min(100, c / S.goal * 100) + '%';
+  $('#goal').classList.toggle('done', c >= S.goal);
+}
+function renderTabs(){
+  document.querySelectorAll('#tabs button').forEach(b => b.setAttribute('aria-selected', String(b.dataset.v === S.view)));
+}
+$('#tabs').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  S.view = b.dataset.v; save(); render();
+});
+
+function scriptSeg(){
+  const opts = [['h','Hiragana','あ'],['k','Katakana','ア'],['b','Obie','']];
+  return `<div class="seg" role="group" aria-label="Alfabet">${opts.map(([v,l,j]) => `<button type="button" data-script="${v}" aria-pressed="${S.script===v}">${l}${j ? `<span class="jp" lang="ja">${j}</span>` : ''}</button>`).join('')}</div>`;
+}
+function bindScriptSeg(after){
+  document.querySelectorAll('[data-script]').forEach(b => b.onclick = () => { S.script = b.dataset.script; save(); after(); });
+}
+
+/* ---------- ćwiczenie ---------- */
+const P = {id:null, phase:null, recent:[], retry:[], timer:null, opts:[]};
+function pickNext(pool){
+  P.retry.forEach(r => r.wait--);
+  const i = P.retry.findIndex(r => r.wait <= 0 && pool.includes(r.id));
+  let id;
+  if (i >= 0){ id = P.retry[i].id; P.retry.splice(i, 1); }
+  else id = pick(pool, S.stats, P.recent);
+  P.recent.push(id);
+  while (P.recent.length > Math.min(3, pool.length - 1)) P.recent.shift();
+  return id;
+}
+function suggestion(){
+  for (const sc of scripts()){
+    const un = ROWS[sc].filter(r => S.unlocked[sc].includes(r.id));
+    if (!un.length) continue;
+    const ids = un.flatMap(r => r.items);
+    const good = ids.filter(id => level(S.stats[id]) >= 2).length;
+    if (good / ids.length >= 0.8){
+      const nx = ROWS[sc].find(r => !S.unlocked[sc].includes(r.id));
+      if (nx) return {sc, row:nx.id, pct:Math.round(good / ids.length * 100)};
+    }
+  }
+  return null;
+}
+function renderBanner(){
+  const el = $('#banner'); if (!el) return;
+  const s = suggestion();
+  if (!s){ el.innerHTML = ''; return; }
+  const name = s.sc === 'h' ? 'hiragany' : 'katakany';
+  el.innerHTML = `<div class="note"><span>Znasz już ${s.pct}% odblokowanych znaków ${name}. Następny rząd: <span class="jp" lang="ja">${rowLabel(s.sc, s.row)}</span></span><button class="btn small primary" id="addrow" type="button">Dodaj</button></div>`;
+  $('#addrow').onclick = () => { S.unlocked[s.sc].push(s.row); save(); toast(`Dodano rząd <span class="jp" lang="ja">${rowLabel(s.sc, s.row)}</span>`); renderBanner(); };
+}
+
+function renderPractice(m){
+  const modes = [['type','Wpisz'],['choice','Wybierz'],['reverse','Odwrotnie']];
+  const helps = {
+    type: 'Wpisz, jak się czyta znak. Dobra odpowiedź sama przechodzi dalej.',
+    choice: 'Wybierz, jak się czyta znak. Na klawiaturze: 1–4.',
+    reverse: 'Wybierz znak, który tak się czyta. Na klawiaturze: 1–4.'
+  };
+  m.innerHTML = `
+    <div class="controls">${scriptSeg()}
+      <div class="seg" role="group" aria-label="Tryb">${modes.map(([v,l]) => `<button type="button" data-mode="${v}" aria-pressed="${S.mode===v}">${l}</button>`).join('')}</div>
+    </div>
+    <div id="banner"></div>
+    <div class="card" id="card">
+      <span class="badge" id="badge" hidden>Nowy znak</span>
+      ${speakBtn()}
+      <div class="big" id="big" lang="ja"></div>
+      <div class="hint" id="hint" aria-live="polite"></div>
+      ${S.mode === 'type'
+        ? `<form class="answer" id="f" autocomplete="off"><input id="in" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="next" placeholder="romaji" aria-label="Jak się czyta ten znak"></form>`
+        : `<div class="choices" id="choices"></div>`}
+      <div class="actions">
+        ${S.mode === 'type' ? '<button type="button" class="btn" id="skip">Nie wiem</button>' : ''}
+        <button type="button" class="btn primary" id="next" hidden>Dalej</button>
+      </div>
+    </div>
+    <p class="help">${helps[S.mode]}</p>`;
+  bindScriptSeg(() => renderPractice(m));
+  document.querySelectorAll('[data-mode]').forEach(b => b.onclick = () => { S.mode = b.dataset.mode; save(); renderPractice(m); });
+  $('#speak').onclick = () => { const it = ITEMS[P.id]; if (it) say(it.ch); };
+  $('#next').onclick = () => advance();
+  if (S.mode === 'type'){
+    const inp = $('#in');
+    inp.addEventListener('input', onTypeInput);
+    $('#f').addEventListener('submit', e => { e.preventDefault(); onEnter(); });
+    $('#skip').onclick = () => { if (P.phase === 'ask') failType(); inp.focus(); };
+  } else {
+    $('#choices').addEventListener('click', e => { const b = e.target.closest('button'); if (b) choose(+b.dataset.i); });
+  }
+  P.retry = []; P.recent = [];
+  nextQ();
+}
+
+function nextQ(){
+  clearTimeout(P.timer);
+  const card = $('#card'); if (!card) return;
+  const pool = poolFor(scripts(), S.mode === 'reverse');
+  renderBanner();
+  card.className = 'card';
+  if (!pool.length){
+    $('#big').textContent = '';
+    $('#hint').innerHTML = 'Nie masz odblokowanego żadnego rzędu w tym alfabecie. Dodaj go w zakładce <b>Postępy</b>.';
+    P.id = null; P.phase = null;
+    return;
+  }
+  const id = pickNext(pool);
+  const it = ITEMS[id];
+  P.id = id;
+  const isNew = !S.intro[id] && !(S.stats[id] && S.stats[id].n);
+  $('#badge').hidden = !isNew;
+  $('#next').hidden = true;
+  const big = $('#big');
+  big.className = 'big';
+  if (S.mode === 'type'){
+    big.textContent = it.ch;
+    const inp = $('#in');
+    inp.value = '';
+    $('#skip').hidden = isNew;
+    P.phase = isNew ? 'intro' : 'ask';
+    $('#hint').innerHTML = isNew ? `Czyta się <b>${it.ro[0]}</b>. Wpisz to, żeby zapamiętać.` : '&nbsp;';
+    if (document.activeElement !== inp) inp.focus({preventScroll:true});
+  } else {
+    const rev = S.mode === 'reverse';
+    if (rev){ big.textContent = it.ro[0]; big.classList.add('roma'); big.removeAttribute('lang'); }
+    else { big.textContent = it.ch; big.setAttribute('lang','ja'); }
+    const ch = $('#choices');
+    if (isNew){
+      P.phase = 'intro';
+      ch.hidden = true;
+      $('#hint').innerHTML = `Nowy znak: <span class="jp" lang="ja">${it.ch}</span> czyta się <b>${it.ro[0]}</b>.`;
+      const nb = $('#next'); nb.hidden = false; nb.textContent = 'Zapamiętane'; nb.focus({preventScroll:true});
+      if (S.sound) say(it.ch);
+      return;
+    }
+    ch.hidden = false;
+    P.phase = 'ask';
+    const opts = [id, ...distractors(it, pool)];
+    for (let i = opts.length - 1; i > 0; i--){ const j = Math.floor(Math.random() * (i + 1)); [opts[i], opts[j]] = [opts[j], opts[i]]; }
+    P.opts = opts;
+    ch.innerHTML = opts.map((o, i) => rev
+      ? `<button type="button" data-i="${i}" lang="ja"><span class="n">${i+1}</span>${ITEMS[o].ch}</button>`
+      : `<button type="button" data-i="${i}" class="roma"><span class="n">${i+1}</span>${ITEMS[o].ro[0]}</button>`).join('');
+    $('#hint').innerHTML = '&nbsp;';
+  }
+}
+function advance(){
+  if (P.phase === 'intro' && S.mode !== 'type'){ S.intro[P.id] = 1; save(); }
+  if (P.phase === 'wrong' || P.phase === 'intro' || P.phase === 'done'){ $('#next').textContent = 'Dalej'; nextQ(); }
+}
+function onEnter(){
+  if (P.phase === 'wrong') nextQ();
+  else if (P.phase === 'ask' && $('#in').value.trim()) failType();
+}
+function onTypeInput(){
+  const inp = $('#in'), it = ITEMS[P.id];
+  if (!it || (P.phase !== 'ask' && P.phase !== 'intro')) return;
+  const v = inp.value.trim().toLowerCase();
+  if (!v) return;
+  const card = $('#card');
+  if (it.ro.includes(v)){
+    if (P.phase === 'intro'){ S.intro[it.id] = 1; save(); }
+    else record(it.id, true);
+    P.phase = 'done';
+    card.classList.add('ok');
+    if (S.sound) say(it.ch);
+    P.timer = setTimeout(nextQ, 320);
+    return;
+  }
+  if (!it.ro.some(a => a.startsWith(v))){
+    if (P.phase === 'intro'){ shake(); inp.value = ''; return; }
+    failType();
+  }
+}
+function failType(){
+  const it = ITEMS[P.id]; if (!it) return;
+  record(it.id, false);
+  P.retry.push({id: it.id, wait: 2});
+  P.phase = 'wrong';
+  const card = $('#card'); card.classList.add('no'); shake();
+  $('#hint').innerHTML = `To jest <b>${it.ro.join(' / ')}</b>. Enter albo Dalej.`;
+  $('#skip').hidden = true;
+  $('#next').hidden = false;
+  if (S.sound) say(it.ch);
+}
+function choose(i){
+  if (P.phase !== 'ask') return;
+  const it = ITEMS[P.id];
+  const btns = document.querySelectorAll('#choices button');
+  if (!btns[i]) return;
+  const ok = P.opts[i] === P.id;
+  const right = P.opts.indexOf(P.id);
+  btns[right].classList.add('right');
+  record(it.id, ok);
+  if (S.sound) say(it.ch);
+  if (ok){
+    P.phase = 'done';
+    $('#card').classList.add('ok');
+    P.timer = setTimeout(nextQ, 450);
+  } else {
+    btns[i].classList.add('wrong');
+    P.retry.push({id: it.id, wait: 2});
+    P.phase = 'wrong';
+    $('#card').classList.add('no'); shake();
+    $('#hint').innerHTML = S.mode === 'reverse'
+      ? `<b>${it.ro[0]}</b> to <span class="jp" lang="ja">${it.ch}</span>. Ten, który wybrałeś, czyta się <b>${ITEMS[P.opts[i]].ro[0]}</b>.`
+      : `<span class="jp" lang="ja">${it.ch}</span> czyta się <b>${it.ro[0]}</b>.`;
+    const nb = $('#next'); nb.hidden = false; nb.focus({preventScroll:true});
+  }
+}
+function shake(){
+  const c = $('#card'); if (!c) return;
+  c.classList.remove('shake'); void c.offsetWidth; c.classList.add('shake');
+}
+
+/* ---------- słowa ---------- */
+const W = {word:null, phase:null, recent:[]};
+function wordLists(){
+  const out = [];
+  scripts().forEach(sc => (sc === 'h' ? WORDS_H : WORDS_K).forEach(w => out.push({w:w[0], pl:w[1], egg:w[2], sc})));
+  return out;
+}
+function wordOk(w){
+  return WT[w.w].every(u => u.k === 'ー' || isUnlocked(w.sc + ':' + (u.base || u.k)));
+}
+function missingRows(w){
+  const set = new Set();
+  WT[w.w].forEach(u => { if (u.k === 'ー') return; const id = w.sc + ':' + (u.base || u.k); if (!isUnlocked(id)) set.add(ITEMS[id].row); });
+  return [...set];
+}
+function renderWords(m){
+  m.innerHTML = `
+    <div class="controls">${scriptSeg()}</div>
+    <div class="card" id="card">
+      ${speakBtn()}
+      <div class="big word" id="big" lang="ja"></div>
+      <div class="hint" id="hint" aria-live="polite"></div>
+      <form class="answer" id="f" autocomplete="off"><input id="in" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="go" placeholder="wpisz w romaji" aria-label="Jak się czyta to słowo"></form>
+      <div class="actions"><button type="button" class="btn" id="skip">Nie wiem</button><button type="button" class="btn primary" id="check">Sprawdź</button></div>
+    </div>
+    <p class="help" id="whelp"></p>`;
+  bindScriptSeg(() => renderWords(m));
+  $('#speak').onclick = () => { if (W.word) say(W.word.w); };
+  $('#f').addEventListener('submit', e => { e.preventDefault(); wordSubmit(); });
+  $('#check').onclick = () => { wordSubmit(); $('#in').focus(); };
+  $('#skip').onclick = () => { if (W.phase === 'ask') wordFail(); $('#in').focus(); };
+  W.recent = [];
+  nextWord();
+}
+function nextWord(){
+  const all = wordLists();
+  const avail = all.filter(wordOk);
+  const card = $('#card'); card.className = 'card';
+  $('#in').value = '';
+  $('#check').textContent = 'Sprawdź';
+  $('#skip').hidden = false;
+  $('#whelp').textContent = `Słowa z twoich znaków: ${avail.length} z ${all.length}. Wpisuj tak, jak piszesz kanę: ありがとう to arigatou (arigato też przejdzie).`;
+  if (!avail.length){
+    let best = null;
+    all.forEach(w => { const mr = missingRows(w); if (!best || mr.length < best.mr.length) best = {w, mr}; });
+    $('#big').textContent = '';
+    $('#hint').innerHTML = best
+      ? `Na razie żadne słowo nie składa się tylko z twoich znaków. Pierwsze pojawi się po dodaniu: ${best.mr.map(r => `<span class="jp" lang="ja">${rowLabel(best.w.sc, r)}</span>`).join(', ')}.`
+      : 'Brak słów.';
+    W.word = null; W.phase = null;
+    return;
+  }
+  let cands = avail.filter(w => !W.recent.includes(w.w));
+  if (!cands.length) cands = avail;
+  const ws = cands.map(w => weight(S.wstats[w.w]));
+  let r = Math.random() * ws.reduce((a, b) => a + b, 0), pickW = cands[cands.length - 1];
+  for (let i = 0; i < cands.length; i++){ r -= ws[i]; if (r <= 0){ pickW = cands[i]; break; } }
+  W.word = pickW; W.phase = 'ask';
+  W.recent.push(pickW.w); while (W.recent.length > Math.min(4, avail.length - 1)) W.recent.shift();
+  $('#big').textContent = pickW.w;
+  $('#hint').innerHTML = '&nbsp;';
+  const inp = $('#in'); if (document.activeElement !== inp) inp.focus({preventScroll:true});
+}
+function wordRecord(ok){
+  const st = S.wstats[W.word.w] || (S.wstats[W.word.w] = {n:0, ok:0, streak:0});
+  st.n++; if (ok){ st.ok++; st.streak++; } else st.streak = 0;
+  bumpDay(); save(); renderHeader();
+}
+function wordSubmit(){
+  if (W.phase === 'done'){ nextWord(); return; }
+  if (W.phase !== 'ask') return;
+  const v = normalize($('#in').value);
+  if (!v) return;
+  if (v === 'miru' || v === 'yomu'){
+    toast('<span class="jp" lang="ja">見る</span> miru to „patrzeć”, a <span class="jp" lang="ja">読む</span> yomu to „czytać”. Stąd nazwy.');
+    return;
+  }
+  if (W.word.egg && v === W.word.egg){
+    toast('Ohio to stan w USA. Po japońsku: <b>ohayou</b>. Spróbuj jeszcze raz.');
+    $('#in').value = '';
+    return;
+  }
+  const res = matchUnits(WT[W.word.w], v);
+  if (res === FULL) wordDone(true);
+  else wordFail();
+}
+function wordFail(){ wordDone(false); }
+function wordDone(ok){
+  wordRecord(ok);
+  W.phase = 'done';
+  const card = $('#card');
+  card.classList.add(ok ? 'ok' : 'no');
+  if (!ok) shake();
+  $('#hint').innerHTML = `<b>${canon(WT[W.word.w])}</b> · ${esc(W.word.pl)}`;
+  $('#check').textContent = 'Dalej';
+  $('#skip').hidden = true;
+  if (S.sound) say(W.word.w);
+}
+
+/* ---------- sprint ---------- */
+const SP = {run:false, end:0, score:0, miss:0, iv:null, id:null, phase:null, recent:[]};
+const SPRINT_MS = 60000;
+function sprintKey(){ return 'sprint-' + S.script; }
+function renderSprint(m){
+  const best = S.best[sprintKey()] || 0;
+  m.innerHTML = `
+    <div class="controls">${scriptSeg()}</div>
+    <div class="card" id="card">
+      <div class="big roma" style="font-size:56px">60 s</div>
+      <div class="hint">Wpisuj romaji jak najszybciej. Pomyłka pokazuje odpowiedź i zabiera chwilę.<br>Twój rekord tutaj: <b>${best}</b></div>
+      <div class="actions"><button type="button" class="btn primary" id="go">Start</button></div>
+    </div>
+    <p class="help">Sprint bierze znaki z odblokowanych rzędów i też liczy się do postępów.</p>`;
+  bindScriptSeg(() => renderSprint(m));
+  $('#go').onclick = () => startSprint(m);
+}
+function startSprint(m){
+  const pool = poolFor(scripts(), false);
+  if (!pool.length){ toast('Najpierw odblokuj jakiś rząd w zakładce Postępy.'); return; }
+  m.innerHTML = `
+    <div class="sprint-bar"><span><small>Wynik</small><span class="score" id="sp-score">0</span></span><span><small>Zostało</small><span class="time" id="sp-time">60</span></span></div>
+    <div class="timebar"><i id="sp-bar"></i></div>
+    <div class="card" id="card">
+      <div class="big" id="big" lang="ja"></div>
+      <div class="hint" id="hint" aria-live="polite">&nbsp;</div>
+      <form class="answer" id="f" autocomplete="off"><input id="in" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="next" placeholder="romaji" aria-label="Jak się czyta ten znak"></form>
+    </div>`;
+  Object.assign(SP, {run:true, end:Date.now() + SPRINT_MS, score:0, miss:0, recent:[], pool});
+  const inp = $('#in');
+  inp.addEventListener('input', sprintInput);
+  $('#f').addEventListener('submit', e => { e.preventDefault(); if (SP.phase === 'ask' && inp.value.trim()) sprintMiss(); });
+  clearInterval(SP.iv);
+  SP.iv = setInterval(() => {
+    const left = Math.max(0, SP.end - Date.now());
+    $('#sp-time').textContent = Math.ceil(left / 1000);
+    $('#sp-bar').style.width = (left / SPRINT_MS * 100) + '%';
+    if (!left) endSprint(m);
+  }, 100);
+  sprintNext();
+  inp.focus();
+}
+function sprintNext(){
+  if (!SP.run) return;
+  const id = pick(SP.pool, S.stats, SP.recent);
+  SP.recent.push(id); while (SP.recent.length > Math.min(3, SP.pool.length - 1)) SP.recent.shift();
+  SP.id = id; SP.phase = 'ask';
+  $('#card').className = 'card';
+  $('#big').textContent = ITEMS[id].ch;
+  $('#hint').innerHTML = '&nbsp;';
+  $('#in').value = '';
+}
+function sprintInput(){
+  if (!SP.run || SP.phase !== 'ask') return;
+  const it = ITEMS[SP.id];
+  const v = $('#in').value.trim().toLowerCase();
+  if (!v) return;
+  if (it.ro.includes(v)){
+    SP.phase = 'done'; SP.score++;
+    $('#sp-score').textContent = SP.score;
+    record(it.id, true);
+    $('#card').classList.add('ok');
+    setTimeout(sprintNext, 120);
+  } else if (!it.ro.some(a => a.startsWith(v))) sprintMiss();
+}
+function sprintMiss(){
+  const it = ITEMS[SP.id];
+  SP.phase = 'wrong'; SP.miss++;
+  record(it.id, false);
+  $('#card').classList.add('no'); shake();
+  $('#hint').innerHTML = `To <b>${it.ro[0]}</b>`;
+  setTimeout(sprintNext, 800);
+}
+function endSprint(m){
+  clearInterval(SP.iv); SP.run = false;
+  const k = sprintKey();
+  const prev = S.best[k] || 0;
+  const rec = SP.score > prev;
+  if (rec){ S.best[k] = SP.score; save(); }
+  const total = SP.score + SP.miss;
+  m.innerHTML = `
+    <div class="controls">${scriptSeg()}</div>
+    <div class="card ${rec ? 'ok' : ''}" id="card">
+      <div class="hint">${rec ? (prev ? `Nowy rekord! Poprzedni: <b>${prev}</b>` : 'Pierwszy wynik zapisany jako rekord') : `Rekord: <b>${prev}</b>`}</div>
+      <div class="result">${SP.score}</div>
+      <div class="hint">dobrych odpowiedzi w minutę${total ? ` · trafność ${Math.round(SP.score / total * 100)}%` : ''}</div>
+      <div class="actions"><button type="button" class="btn primary" id="go">Jeszcze raz</button></div>
+    </div>`;
+  bindScriptSeg(() => renderSprint(m));
+  $('#go').onclick = () => startSprint(m);
+  $('#go').focus();
+}
+
+/* ---------- postępy ---------- */
+let tableSc = null;
+let confirmReset = false;
+function renderTable(m){
+  if (!tableSc) tableSc = S.script === 'k' ? 'k' : 'h';
+  const ids = ROWS[tableSc].flatMap(r => r.items);
+  const cnt = [0,0,0,0];
+  ids.forEach(id => cnt[level(S.stats[id])]++);
+  const labels = ['Nowe','W nauce','Znane','Opanowane'];
+  const groupsHtml = GROUPS.map(([g, title]) => `
+    <h2>${title}</h2>
+    <div class="rows">${ROWS[tableSc].filter(r => r.grp === g).map(r => {
+      const on = S.unlocked[tableSc].includes(r.id);
+      return `<div class="row ${on ? '' : 'off'}">
+        <button type="button" class="tog" data-row="${r.id}" aria-pressed="${on}" aria-label="Ćwicz rząd ${rowLabel(tableSc, r.id)}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5 10 17 19 7"/></svg></button>
+        <div class="cells">${r.items.map(id => `<span class="cell l${level(S.stats[id])}" title="${labels[level(S.stats[id])]}"><span class="k" lang="ja">${ITEMS[id].ch}</span><span class="r">${ITEMS[id].ro[0]}</span></span>`).join('')}</div>
+      </div>`;
+    }).join('')}</div>`).join('');
+  const words = Object.values(S.wstats).filter(s => level(s) >= 2).length;
+  m.innerHTML = `
+    <div class="controls"><div class="seg" role="group" aria-label="Alfabet w tabeli">
+      <button type="button" data-tsc="h" aria-pressed="${tableSc==='h'}">Hiragana<span class="jp" lang="ja">あ</span></button>
+      <button type="button" data-tsc="k" aria-pressed="${tableSc==='k'}">Katakana<span class="jp" lang="ja">ア</span></button>
+    </div></div>
+    <div class="summary">${cnt.map((c, i) => `<div class="stat l${i}"><strong>${c}</strong><span>${labels[i]}</span></div>`).join('')}</div>
+    <div class="legend"><span><i style="background:var(--learn)"></i>w nauce</span><span><i style="background:var(--known)"></i>znane (3 dobrze z rzędu)</span><span><i style="background:var(--good)"></i>opanowane (6 z rzędu, 85% trafień)</span></div>
+    <p class="help" style="text-align:left">Zaznaczone rzędy trafiają do ćwiczeń. Znane słowa: <b>${words}</b>.</p>
+    ${groupsHtml}
+    <h2>Ustawienia</h2>
+    <div class="panel">
+      <div class="line"><span>Dzienny cel odpowiedzi</span>
+        <div class="seg" style="flex:0 0 auto" role="group" aria-label="Dzienny cel">${[20,50,100].map(g => `<button type="button" data-goal="${g}" aria-pressed="${S.goal===g}">${g}</button>`).join('')}</div>
+      </div>
+      <div class="line"><span>Czytaj na głos po odpowiedzi</span>
+        ${jaVoice
+          ? `<button type="button" class="tog" id="snd" aria-pressed="${S.sound}" aria-label="Czytaj na głos"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5 10 17 19 7"/></svg></button>`
+          : '<span class="muted" style="font-size:13px">Ta przeglądarka nie ma japońskiego głosu</span>'}
+      </div>
+      <p>Seria rośnie, gdy w danym dniu odpowiesz co najmniej ${DAY_MIN} razy.</p>
+    </div>
+    <h2>Przenieś postępy</h2>
+    <div class="panel">
+      <p>Postępy są zapisane w tej przeglądarce. Żeby przenieść je na telefon albo inną stronę, skopiuj kod tutaj i wklej go tam.</p>
+      <div class="actions" style="justify-content:flex-start">
+        <button type="button" class="btn small" id="exp">Kopiuj kod postępów</button>
+        <button type="button" class="btn small" id="imp">Wklej kod</button>
+      </div>
+      <div id="xfer"></div>
+    </div>
+    <div class="panel">
+      <div class="line"><span>Wyzeruj wszystkie postępy</span>
+        <span class="actions">${confirmReset
+          ? '<button type="button" class="btn small danger" id="reset2">Tak, wyzeruj</button><button type="button" class="btn small" id="reset0">Anuluj</button>'
+          : '<button type="button" class="btn small" id="reset1">Wyzeruj</button>'}</span>
+      </div>
+      ${confirmReset ? '<p>Tego nie da się cofnąć. Zostaną tylko ustawienia.</p>' : ''}
+    </div>`;
+  document.querySelectorAll('[data-tsc]').forEach(b => b.onclick = () => { tableSc = b.dataset.tsc; renderTable(m); });
+  document.querySelectorAll('[data-row]').forEach(b => b.onclick = () => {
+    const list = S.unlocked[tableSc], r = b.dataset.row;
+    const i = list.indexOf(r);
+    if (i >= 0) list.splice(i, 1); else list.push(r);
+    save(); renderTable(m);
+  });
+  document.querySelectorAll('[data-goal]').forEach(b => b.onclick = () => { S.goal = +b.dataset.goal; save(); renderHeader(); renderTable(m); });
+  const snd = $('#snd'); if (snd) snd.onclick = () => { S.sound = !S.sound; save(); if (S.sound) say('よむ'); renderTable(m); };
+  $('#exp').onclick = async () => {
+    const code = btoa(unescape(encodeURIComponent(JSON.stringify(S))));
+    try { await navigator.clipboard.writeText(code); toast('Skopiowano kod postępów'); }
+    catch (e) {
+      $('#xfer').innerHTML = `<p>Nie udało się skopiować samemu. Zaznacz kod i skopiuj go ręcznie:</p><textarea readonly id="xcode"></textarea>`;
+      $('#xcode').value = code; $('#xcode').select();
+    }
+  };
+  $('#imp').onclick = () => {
+    $('#xfer').innerHTML = `<textarea id="xin" placeholder="Wklej tu kod postępów" aria-label="Kod postępów"></textarea><div class="actions" style="justify-content:flex-start"><button type="button" class="btn small primary" id="xgo">Wczytaj</button></div>`;
+    $('#xin').focus();
+    $('#xgo').onclick = () => {
+      try {
+        const s = JSON.parse(decodeURIComponent(escape(atob($('#xin').value.trim()))));
+        if (!s || s.v !== 1 || !s.stats) throw new Error();
+        S = Object.assign(defaults(), s); S.view = 'tabela'; save();
+        toast('Wczytano postępy'); render();
+      } catch (e) { toast('To nie wygląda na kod postępów z YOMU. Skopiuj go jeszcze raz w całości.'); }
+    };
+  };
+  const r1 = $('#reset1'); if (r1) r1.onclick = () => { confirmReset = true; renderTable(m); };
+  const r0 = $('#reset0'); if (r0) r0.onclick = () => { confirmReset = false; renderTable(m); };
+  const r2 = $('#reset2'); if (r2) r2.onclick = () => {
+    const keep = {goal:S.goal, sound:S.sound, script:S.script, mode:S.mode};
+    S = Object.assign(defaults(), keep, {view:'tabela'}); save(); confirmReset = false;
+    toast('Postępy wyzerowane'); render();
+  };
+}
+
+/* ---------- klawiatura ---------- */
+document.addEventListener('keydown', e => {
+  if (e.target.matches('input, textarea')) return;
+  if (S.view === 'cwicz' && S.mode !== 'type'){
+    if (/^[1-4]$/.test(e.key)){ choose(+e.key - 1); e.preventDefault(); }
+    else if (e.key === 'Enter' && (P.phase === 'wrong' || P.phase === 'intro') && document.activeElement !== $('#next')){ advance(); e.preventDefault(); }
+  }
+});
+
+/* ---------- start ---------- */
+function render(){
+  clearTimeout(P.timer); clearInterval(SP.iv); SP.run = false;
+  confirmReset = false;
+  renderHeader(); renderTabs();
+  const m = $('#main');
+  if (S.view === 'slowa') renderWords(m);
+  else if (S.view === 'sprint') renderSprint(m);
+  else if (S.view === 'tabela') renderTable(m);
+  else { S.view = 'cwicz'; renderPractice(m); }
+}
+render();
+</script>
+</body>
+</html>
