@@ -160,6 +160,34 @@ main{display:flex;flex-direction:column;gap:12px}
 
 .sycode{font-family:ui-monospace,Consolas,monospace;font-size:16px;letter-spacing:.03em;color:var(--accent);word-break:break-all}
 
+/* zeszyt */
+.bookcard{gap:12px}
+.bkboards{display:flex;gap:10px;justify-content:center;width:100%}
+.board.half{width:min(46%,180px)}
+.bksec{width:100%;display:flex;flex-direction:column;gap:8px}
+.bksec h3{margin:0;font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);font-weight:800}
+.bksec p{margin:0;font-size:14px;color:var(--muted)}
+.bksec p b,.bksec p .jp{color:var(--text)}
+.steps{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.step{width:58px;height:58px;background:var(--bg);border:1px solid var(--line);border-radius:10px}
+.stepplus{color:var(--muted);font-weight:800;padding:0 2px}
+.s-step-old{fill:none;stroke:var(--text);stroke-width:5;stroke-linecap:round;stroke-linejoin:round;opacity:.85}
+.s-step-new{fill:none;stroke:var(--accent);stroke-width:6;stroke-linecap:round;stroke-linejoin:round}
+.s-step-dot{fill:var(--accent)}
+.s-step-n{font:800 13px var(--f-ui);fill:var(--muted)}
+.exw{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
+.exw li{display:grid;grid-template-columns:auto auto 1fr;gap:10px;align-items:baseline;font-size:14px;background:var(--panel2);border-radius:10px;padding:6px 10px}
+.exw li .jp{font-size:22px}
+.exw li b{color:var(--text)}
+.exw li span:last-child{color:var(--muted)}
+.exw li.dim{opacity:.5}
+.exw mark{background:none;color:var(--accent)}
+.row.bkrow{grid-template-columns:1fr}
+.cell.sel{outline:2px solid var(--accent);outline-offset:1px}
+.cell.pp{position:relative}
+.cell.pp::after{content:"✎";position:absolute;top:1px;right:3px;font-size:10px;color:var(--known)}
+.btn[disabled]{opacity:.35;cursor:default}
+
 /* pisanie */
 .board{position:relative;width:min(100%,320px);aspect-ratio:1;border-radius:16px;background:var(--bg);border:1px solid var(--line);touch-action:none;user-select:none;-webkit-user-select:none}
 .board.small{width:min(100%,220px)}
@@ -755,6 +783,7 @@ function mergeState(a, b){
   out.days = maxMap(A('days'), B('days'));
   out.best = maxMap(A('best'), B('best'));
   out.tally = maxMap(A('tally'), B('tally'));
+  out.paper = maxMap(A('paper'), B('paper'));
   out.ach = {...A('ach')};
   for (const k in B('ach')) out.ach[k] = Math.min(out.ach[k] || Infinity, B('ach')[k]);
   // pomyłki znaku bierzemy z urządzenia, którego statystyki tego znaku wygrały
@@ -781,13 +810,14 @@ const KEY = 'yomu.v1';
 function defaults(){
   return {v:1, view:'cwicz', script:'h', mode:'type', unlocked:{h:['a'], k:['a']}, stats:{}, intro:{}, wstats:{}, days:{}, best:{}, sound:false, goal:50,
     mix:{}, ach:{}, tally:{listen:0, write:0}, wmode:'look', sakura:false, name:'',
-    plan:{since:dayKey(), done:{}, cur:null}, dstat:null};
+    plan:{since:dayKey(), done:{}, cur:null}, dstat:null, pmode:'book', paper:{}};
 }
 function migrate(s){
   const now = Date.now();
   [s.stats, s.wstats].forEach(o => Object.values(o).forEach(st => migrateStat(st, now)));
   s.tally = Object.assign({listen:0, write:0}, s.tally);
   if (!s.plan || !s.plan.done) s.plan = {since:dayKey(), done:{}, cur:null};
+  if (!s.paper) s.paper = {};
   return s;
 }
 function load(){
@@ -1029,7 +1059,7 @@ function taskState(t){
     case 'goal': return {...prog(S.days[dayKey()] || 0, S.goal), label: `Odpowiedz ${S.goal} razy`};
     case 'new': return {...prog(ds.nw, t.n), label: `Poznaj ${t.n} ${plural(t.n, 'nowy znak', 'nowe znaki', 'nowych znaków')}`};
     case 'row': return {done: ds.rows >= 1, txt: '', label: 'Dodaj następny rząd znaków'};
-    case 'write': return {...prog(ds.wr, t.n), label: `Napisz bez błędu ${t.n} znaki w zakładce Pisz`};
+    case 'write': return {...prog(ds.wr, t.n), label: `Napisz ${t.n} znaki (w zeszycie albo na ekranie)`};
     case 'words': return {...prog(ds.wd, t.n), label: `Przeczytaj ${t.n} słów`};
     case 'listen': return {...prog(ds.ls, t.n), label: `Ze słuchu: ${t.n} dobrych odpowiedzi`};
   }
@@ -1223,10 +1253,10 @@ function strokeInfo(svgEl, ds){
   return out;
 }
 const reduceMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
-function drawStrokes(g, ds, {cls = 's-guide', animate = false, numbers = false} = {}){
+function drawStrokes(g, ds, {cls = 's-guide', animate = false, numbers = false, start = 0} = {}){
   g.innerHTML = '';
   const info = strokeInfo(g.ownerSVGElement, ds);
-  let t = 0;
+  let t = start;
   const anim = animate && !reduceMotion() && Element.prototype.animate;
   ds.forEach((d, i) => {
     const p = document.createElementNS(NS, 'path');
@@ -1248,6 +1278,7 @@ function drawStrokes(g, ds, {cls = 's-guide', animate = false, numbers = false} 
       g.appendChild(tx);
     }
   });
+  info.end = t;
   return info;
 }
 const BOARD_SVG = (id) => `<svg id="${id}" viewBox="0 0 109 109" aria-hidden="true">
@@ -1702,8 +1733,16 @@ function wordDone(ok){
 /* ---------- pisanie ---------- */
 const WR = {ch:null, ro:'', sc:'h', ref:null, ends:null, strokes:[], cur:null, checked:false, queue:[], qlen:0, recent:[], pending:null};
 function writePool(){ return poolFor(scripts(), true).filter(id => [...ITEMS[id].ch].length === 1); }
+const pmSeg = () => `<div class="seg" role="group" aria-label="Widok pisania">
+  <button type="button" data-pm="book" aria-pressed="${S.pmode !== 'board'}">Zeszyt</button>
+  <button type="button" data-pm="board" aria-pressed="${S.pmode === 'board'}">Ćwicz na ekranie</button></div>`;
+function bindPm(m){ document.querySelectorAll('[data-pm]').forEach(b => b.onclick = () => { S.pmode = b.dataset.pm; save(); renderWrite(m); }); }
 function renderWrite(m){
+  if (S.pmode === 'board') renderBoard(m); else renderBook(m);
+}
+function renderBoard(m){
   m.innerHTML = `
+    <div class="controls">${pmSeg()}</div>
     <div class="controls">${scriptSeg()}
       <div class="seg" role="group" aria-label="Podgląd">
         <button type="button" data-wm="look" aria-pressed="${S.wmode==='look'}">Z podglądem</button>
@@ -1729,6 +1768,7 @@ function renderWrite(m){
       <input class="field" id="nm" type="text" autocomplete="off" autocapitalize="words" spellcheck="false" placeholder="np. Kasia, Michał" aria-label="Imię">
       <div id="nmout"></div>
     </div>`;
+  bindPm(m);
   bindScriptSeg(() => { WR.queue = []; WR.ch = null; renderWrite(m); });
   document.querySelectorAll('[data-wm]').forEach(b => b.onclick = () => { S.wmode = b.dataset.wm; save(); renderWrite(m); });
   $('#speak').onclick = () => { if (WR.ch) say(WR.ch); };
@@ -1888,6 +1928,141 @@ function renderName(final){
   if (final){ unlockAch(egg ? 'claude' : 'myname'); }
 }
 
+/* ---------- zeszyt: ściąga do pisania na papierze ---------- */
+const BK = {sc:null, sel:null, all:false};
+const KANA_NOTES = {
+  'は':'Gdy jest cząstką (temat zdania), czyta się „wa”: わたしは… = „ja…”.',
+  'へ':'Gdy jest cząstką kierunku, czyta się „e”: にほんへ = „do Japonii”.',
+  'を':'Prawie zawsze jest cząstką i czyta się „o”: pokazuje, na czym wykonujesz czynność (パンをたべる = „jem chleb”).',
+  'ん':'Jedyny znak, który jest samą spółgłoską. Nigdy nie zaczyna słowa.',
+  'ン':'Jedyny znak, który jest samą spółgłoską. Nigdy nie zaczyna słowa.'
+};
+function bookOrder(){
+  const sc = BK.sc;
+  return ROWS[sc].filter(r => BK.all || S.unlocked[sc].includes(r.id)).flatMap(r => r.items);
+}
+function renderBook(m){
+  if (!BK.sc) BK.sc = S.script === 'k' ? 'k' : 'h';
+  const sc = BK.sc;
+  const order = bookOrder();
+  if (!order.includes(BK.sel)) BK.sel = order[0] || null;
+  const groups = GROUPS.map(([g, title]) => {
+    const rows = ROWS[sc].filter(r => r.grp === g && (BK.all || S.unlocked[sc].includes(r.id)));
+    if (!rows.length) return '';
+    return `<h2>${title}</h2><div class="rows">${rows.map(r => {
+      const on = S.unlocked[sc].includes(r.id);
+      return `<div class="row bkrow ${on ? '' : 'off'}"><div class="cells">${r.items.map(id => `<button type="button" class="cell l${level(S.stats[id])}${S.paper[id] ? ' pp' : ''}${id === BK.sel ? ' sel' : ''}" data-bk="${id}"><span class="k" lang="ja">${ITEMS[id].ch}</span><span class="r">${ITEMS[id].ro[0]}</span></button>`).join('')}</div></div>`;
+    }).join('')}</div>`;
+  }).join('');
+  m.innerHTML = `
+    <div class="controls">${pmSeg()}</div>
+    <div class="controls"><div class="seg" role="group" aria-label="Alfabet">
+      <button type="button" data-bsc="h" aria-pressed="${sc==='h'}">Hiragana<span class="jp" lang="ja">あ</span></button>
+      <button type="button" data-bsc="k" aria-pressed="${sc==='k'}">Katakana<span class="jp" lang="ja">ア</span></button>
+    </div></div>
+    <div id="bdetail"></div>
+    ${order.length ? groups : '<p class="help">Nie masz odblokowanego żadnego rzędu w tym alfabecie.</p>'}
+    <div class="actions"><button type="button" class="btn small" id="bk-all">${BK.all ? 'Pokaż tylko odblokowane' : 'Pokaż też zablokowane znaki'}</button></div>
+    <p class="help" style="text-align:left">W zeszycie: każdy znak w swojej kratce, kreski w kolejności z animacji. Zwykle idzie się od góry do dołu i od lewej do prawej. Małe ゃ ゅ ょ っ pisze się mniejsze, w lewym dolnym rogu kratki. Znaczek ✎ przy znaku: już go pisałeś w zeszycie.</p>`;
+  bindPm(m);
+  document.querySelectorAll('[data-bsc]').forEach(b => b.onclick = () => { BK.sc = b.dataset.bsc; BK.sel = null; renderBook(m); });
+  $('#bk-all').onclick = () => { BK.all = !BK.all; renderBook(m); };
+  m.querySelectorAll('[data-bk]').forEach(b => b.onclick = () => {
+    BK.sel = b.dataset.bk;
+    m.querySelectorAll('[data-bk]').forEach(x => x.classList.toggle('sel', x === b));
+    renderBookDetail(m);
+    $('#bdetail').scrollIntoView({behavior:'smooth', block:'start'});
+  });
+  renderBookDetail(m);
+}
+function stepsHtml(ds){
+  const grid = '<line class="s-grid" x1="54.5" y1="4" x2="54.5" y2="105"/><line class="s-grid" x1="4" y1="54.5" x2="105" y2="54.5"/>';
+  return ds.map((_, k) => {
+    const prev = ds.slice(0, k).map(d => `<path class="s-step-old" d="${d}"/>`).join('');
+    const m0 = ds[k].match(/^M\s*(-?[\d.]+)[ ,]+(-?[\d.]+)/);
+    const dot = m0 ? `<circle class="s-step-dot" cx="${m0[1]}" cy="${m0[2]}" r="5"/>` : '';
+    return `<svg class="step" viewBox="0 0 109 109" aria-label="Kreska ${k + 1}">${grid}${prev}<path class="s-step-new" d="${ds[k]}"/>${dot}<text class="s-step-n" x="8" y="14">${k + 1}</text></svg>`;
+  }).join('');
+}
+function renderBookDetail(m){
+  const el = $('#bdetail'); if (!el) return;
+  const id = BK.sel, it = ITEMS[id];
+  if (!it){ el.innerHTML = ''; return; }
+  const chars = [...it.ch];
+  const order = bookOrder(), idx = order.indexOf(id);
+  const list = it.sc === 'h' ? [...WORDS_H, ...PHRASES_H] : WORDS_K;
+  const self = list.find(w => w[0] === it.ch);
+  const ex = list.filter(w => w[0] !== it.ch && w[0].includes(it.ch))
+    .map(w => ({w: w[0], pl: w[1], ok: wordOk({w: w[0], sc: it.sc})}))
+    .sort((a, b) => (b.ok - a.ok) || (a.w.length - b.w.length)).slice(0, 4);
+  const mark = w => w.split(it.ch).map(esc).join(`<mark>${it.ch}</mark>`);
+  const mean = `
+    <p>${self ? `Ten znak sam w sobie jest też słowem: <span class="jp" lang="ja">${it.ch}</span> = <b>${esc(self[1])}</b>. Poza tym, jak każda kana, to po prostu sylaba.` : 'Pojedyncza kana to dźwięk (sylaba) i sama nic nie znaczy. Znaczenie mają słowa, w których występuje:'}</p>
+    ${KANA_NOTES[it.ch] ? `<p>${KANA_NOTES[it.ch]}</p>` : ''}
+    ${it.sc === 'k' ? '<p>Katakaną pisze się głównie słowa z innych języków i obce imiona.</p>' : ''}
+    ${ex.length ? `<ul class="exw">${ex.map(x => `<li class="${x.ok ? '' : 'dim'}"><span class="jp" lang="ja">${mark(x.w)}</span><b>${canon(WT[x.w])}</b><span>${esc(x.pl)}</span></li>`).join('')}</ul>${ex.some(x => !x.ok) ? '<p class="muted" style="font-size:12px">Wyszarzone: masz jeszcze nieodblokowane znaki z tego słowa.</p>' : ''}` : '<p class="muted">W YOMU nie ma jeszcze słów z tym znakiem.</p>'}`;
+  el.innerHTML = `
+    <div class="card bookcard">
+      ${speakBtn('bk-say')}
+      <div class="bkboards">${chars.map((c, i) => `<div class="board ${chars.length > 1 ? 'half' : 'small'}">${BOARD_SVG('bksvg' + i)}</div>`).join('')}</div>
+      <div class="hint"><span class="jp" lang="ja" style="font-size:1.6em">${it.ch}</span> czyta się <b>${it.ro.join(' / ')}</b> · <span id="bk-n">…</span></div>
+      <div class="actions">
+        <button type="button" class="btn small" id="bk-prev" ${idx > 0 ? '' : 'disabled'} aria-label="Poprzedni znak">←</button>
+        <button type="button" class="btn small" id="bk-play">Pokaż jeszcze raz</button>
+        <button type="button" class="btn small" id="bk-next" ${idx >= 0 && idx < order.length - 1 ? '' : 'disabled'} aria-label="Następny znak">→</button>
+      </div>
+      <div class="bksec"><h3>Krok po kroku</h3><div class="steps" id="bk-steps"><span class="muted" style="font-size:13px">Wczytuję wzór kresek…</span></div></div>
+      ${mnemo(id) ? `<div class="bksec"><h3>Jak zapamiętać</h3><div class="mnemo" style="text-align:left">${esc(mnemo(id))}</div></div>` : ''}
+      <div class="bksec"><h3>Co to znaczy</h3>${mean}</div>
+      <div class="actions">
+        <button type="button" class="btn primary" id="bk-paper">${S.paper[id] ? `Napisane w zeszycie ✓ (${S.paper[id]}×)` : 'Napisałem w zeszycie'}</button>
+        <button type="button" class="btn" id="bk-board">Ćwicz na ekranie</button>
+      </div>
+    </div>`;
+  const go = d => { const n = order[idx + d]; if (!n) return; BK.sel = n; m.querySelectorAll('[data-bk]').forEach(x => x.classList.toggle('sel', x.dataset.bk === n)); renderBookDetail(m); };
+  $('#bk-prev').onclick = () => go(-1);
+  $('#bk-next').onclick = () => go(1);
+  $('#bk-say').onclick = () => say(it.ch);
+  let paperDone = false;
+  $('#bk-paper').onclick = () => {
+    if (paperDone) return;
+    paperDone = true;
+    S.paper[id] = (S.paper[id] || 0) + 1;
+    todayStat().wr++;
+    save(); planCheck();
+    $('#bk-paper').textContent = `Napisane w zeszycie ✓ (${S.paper[id]}×)`;
+    const cell = m.querySelector(`[data-bk="${id}"]`); if (cell) cell.classList.add('pp');
+  };
+  $('#bk-board').onclick = () => {
+    if (chars.length === 1) WR.pending = id;
+    else { WR.queue = chars.map(c => ({k: c, r: KMAP[c] ? KMAP[c][0] : ''})); WR.qlen = 0; WR.ch = null; }
+    S.pmode = 'board'; save(); render();
+  };
+  // kreski: animacja na planszy + klatki krok po kroku
+  chars.forEach((c, i) => { layer($('#bksvg' + i), 'font').textContent = c; });
+  Promise.all(chars.map(c => loadStrokes(c))).then(all => {
+    if (BK.sel !== id || !$('#bksvg0')) return;
+    const n = all.reduce((a, ds) => a + ds.length, 0);
+    $('#bk-n').textContent = `${n} ${plural(n, 'kreska', 'kreski', 'kresek')}`;
+    $('#bk-steps').innerHTML = all.map((ds, i) => (i ? '<span class="stepplus">+</span>' : '') + stepsHtml(ds)).join('');
+    const play = () => {
+      let t = 0;
+      all.forEach((ds, i) => {
+        const svg = $('#bksvg' + i); if (!svg) return;
+        layer(svg, 'font').textContent = '';
+        drawStrokes(layer(svg, 'guide'), ds, {cls:'s-guide'});
+        t = drawStrokes(layer(svg, 'demo'), ds, {cls:'s-demo', animate:true, numbers:true, start:t}).end;
+      });
+    };
+    $('#bk-play').onclick = play;
+    play();
+  }).catch(() => {
+    if (BK.sel !== id) return;
+    $('#bk-n').textContent = 'bez wzoru kresek';
+    $('#bk-steps').innerHTML = `<span class="muted" style="font-size:13px">${window.top !== window ? 'W podglądzie wzory kresek się nie wczytają. Działa na stronie YOMU.' : 'Nie udało się pobrać wzoru kresek. Przy pierwszym otwarciu znaku potrzebny jest internet.'}</span>`;
+  });
+}
+
 /* ---------- karta znaku ---------- */
 function openCard(id){
   const it = ITEMS[id]; if (!it) return;
@@ -1919,7 +2094,7 @@ function openCard(id){
       drawStrokes(layer(svg, 'demo'), ds, {cls:'s-demo', animate:true, numbers:true});
     }).catch(() => { $('#d-st').textContent = 'Nie udało się pobrać wzoru kresek. Sprawdź internet.'; });
     $('#d-play').onclick = play;
-    $('#d-write').onclick = () => { dlg.close(); WR.pending = id; S.view = 'pisz'; save(); render(); };
+    $('#d-write').onclick = () => { dlg.close(); WR.pending = id; S.view = 'pisz'; S.pmode = 'board'; save(); render(); };
     play();
   }
   if (typeof dlg.showModal === 'function') dlg.showModal(); else dlg.setAttribute('open', '');
