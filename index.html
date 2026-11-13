@@ -158,6 +158,8 @@ main{display:flex;flex-direction:column;gap:12px}
 .chip.ok{border-color:var(--good)}
 .chip.ok strong{color:var(--good)}
 
+.sycode{font-family:ui-monospace,Consolas,monospace;font-size:16px;letter-spacing:.03em;color:var(--accent);word-break:break-all}
+
 /* pisanie */
 .board{position:relative;width:min(100%,320px);aspect-ratio:1;border-radius:16px;background:var(--bg);border:1px solid var(--line);touch-action:none;user-select:none;-webkit-user-select:none}
 .board.small{width:min(100%,220px)}
@@ -737,6 +739,41 @@ function judgeStrokes(ref, user, tol = 26){
   }
   return res;
 }
+// łączenie postępów z dwóch urządzeń: nic nie ginie, ustawienia (cel, tryb, dźwięk…) zostają lokalne
+function mergeState(a, b){
+  if (!b || b.v !== 1) return a;
+  const out = JSON.parse(JSON.stringify(a));
+  const A = k => a[k] || {}, B = k => b[k] || {};
+  const pickStat = (x, y) => !x ? y : !y ? x : (y.n > x.n || (y.n === x.n && (y.due || 0) > (x.due || 0))) ? y : x;
+  const mergeStats = (X, Y) => { const r = {}; new Set([...Object.keys(X), ...Object.keys(Y)]).forEach(k => { r[k] = pickStat(X[k], Y[k]); }); return r; };
+  const maxMap = (X, Y) => { const r = {...X}; for (const k in Y) r[k] = Math.max(r[k] || 0, Y[k] || 0); return r; };
+  out.stats = mergeStats(A('stats'), B('stats'));
+  out.wstats = mergeStats(A('wstats'), B('wstats'));
+  out.unlocked = {};
+  ['h','k'].forEach(sc => { out.unlocked[sc] = [...new Set([...(A('unlocked')[sc] || []), ...(B('unlocked')[sc] || [])])]; });
+  out.intro = {...B('intro'), ...A('intro')};
+  out.days = maxMap(A('days'), B('days'));
+  out.best = maxMap(A('best'), B('best'));
+  out.tally = maxMap(A('tally'), B('tally'));
+  out.ach = {...A('ach')};
+  for (const k in B('ach')) out.ach[k] = Math.min(out.ach[k] || Infinity, B('ach')[k]);
+  // pomyłki znaku bierzemy z urządzenia, którego statystyki tego znaku wygrały
+  out.mix = {};
+  new Set([...Object.keys(A('mix')), ...Object.keys(B('mix'))]).forEach(id => {
+    const w = out.stats[id];
+    const fromB = w && w === B('stats')[id] && w !== A('stats')[id];
+    const m = w ? (fromB ? B('mix')[id] : A('mix')[id]) : (A('mix')[id] || B('mix')[id]);
+    if (m && Object.keys(m).length) out.mix[id] = {...m};
+  });
+  const pa = a.plan || {done:{}}, pb = b.plan || {done:{}};
+  out.plan = {since: [pa.since, pb.since].filter(Boolean).sort()[0], done: {...pb.done, ...pa.done}, cur: pa.cur || null};
+  if (pb.cur && (!pa.cur || pb.cur.day > pa.cur.day)) out.plan.cur = pb.cur;
+  else if (pb.cur && pa.cur && pb.cur.day === pa.cur.day) out.plan.cur = {...pa.cur, got: {...pb.cur.got, ...pa.cur.got}};
+  const da = a.dstat, db = b.dstat;
+  if (db && (!da || db.day > da.day)) out.dstat = db;
+  else if (db && da && db.day === da.day){ out.dstat = {day: da.day}; for (const k in {...da, ...db}) if (k !== 'day') out.dstat[k] = Math.max(da[k] || 0, db[k] || 0); }
+  return JSON.parse(JSON.stringify(out));
+}
 // CORE END
 
 /* ---------- stan ---------- */
@@ -761,7 +798,8 @@ function load(){
   return defaults();
 }
 let S = load();
-function save(){ try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} }
+function saveLocal(){ try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} }
+function save(){ saveLocal(); scheduleSync(); }
 function bumpDay(){
   const d = dayKey();
   if (!S.days[d]){
@@ -837,6 +875,117 @@ function nextToast(){
   toastOn = true; t.innerHTML = h; t.hidden = false;
   setTimeout(nextToast, TQ.length > 1 ? 2000 : 3200);
 }
+
+/* ---------- synchronizacja (Supabase, kod zamiast konta) ---------- */
+const SB_URL = 'https://dkslpcxdfhcjhojjtyrn.supabase.co/rest/v1/rpc/';
+const SB_KEY = 'sb_publishable_uRICS04MEy8aZYz7-86vsA_2eS3rP-j';
+let SY = {code:'', at:0, err:''};
+try { SY = Object.assign(SY, JSON.parse(localStorage.getItem('yomu.sync')) || {}); } catch (e) {}
+const saveSY = () => { try { localStorage.setItem('yomu.sync', JSON.stringify(SY)); } catch (e) {} };
+async function sbCall(fn, body){
+  const r = await fetch(SB_URL + fn, {method:'POST', headers:{apikey: SB_KEY, 'Content-Type':'application/json'}, body: JSON.stringify(body)});
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  return r.json();
+}
+const SYNC_WORDS = ['neko','inu','kitsune','tanuki','usagi','kame','tori','ryuu','sakura','hana','yuki','hoshi','tsuki','sora','umi','kaze','ame','mochi','dango','onigiri','ramen','sushi','ninja','samurai'];
+function newCode(){
+  const r = crypto.getRandomValues(new Uint32Array(3)), n = SYNC_WORDS.length;
+  return `${SYNC_WORDS[r[0] % n]}-${SYNC_WORDS[r[1] % n]}-${String(r[2] % 100000).padStart(5, '0')}`;
+}
+const normCode = s => String(s).trim().toLowerCase().replace(/\s+/g, '-');
+let syncBusy = false, syncAgain = false, syncT = null;
+function scheduleSync(){
+  if (!SY.code) return;
+  clearTimeout(syncT);
+  syncT = setTimeout(() => { syncT = null; syncNow(); }, 8000);
+}
+// pobierz → połącz → wyślij; zwraca 'ok' | 'nokod' | 'net' | 'busy'
+async function syncNow({mustExist = false, rerender = false} = {}){
+  if (!SY.code) return 'net';
+  if (syncBusy){ syncAgain = true; return 'busy'; }
+  syncBusy = true;
+  clearTimeout(syncT); syncT = null;
+  let res = 'ok', changed = false;
+  try {
+    const remote = await sbCall('yomu_get', {p_code: SY.code});
+    if (mustExist && !remote){ res = 'nokod'; return res; }
+    if (remote){
+      const before = JSON.stringify(S);
+      S = migrate(mergeState(S, migrate(Object.assign(defaults(), remote))));
+      if (JSON.stringify(S) !== before){ changed = true; saveLocal(); }
+    }
+    const data = JSON.parse(JSON.stringify(S)); delete data.view;
+    await sbCall('yomu_put', {p_code: SY.code, p_data: data});
+    SY.at = Date.now(); SY.err = '';
+  } catch (e) { res = 'net'; SY.err = 'net'; }
+  finally {
+    saveSY();
+    syncBusy = false;
+    if (changed){ if (rerender || S.view === 'tabela') render(); else renderHeader(); }
+    else renderSyncPanel();
+    if (syncAgain){ syncAgain = false; scheduleSync(); }
+  }
+  return res;
+}
+function ago(t){
+  const s = Math.round((Date.now() - t) / 1000);
+  if (s < 60) return 'przed chwilą';
+  const m = Math.round(s / 60);
+  if (m < 60) return `${m} min temu`;
+  const hh = Math.round(m / 60);
+  return hh < 24 ? `${hh} godz. temu` : new Date(t).toLocaleDateString('pl-PL');
+}
+function renderSyncPanel(){
+  const el = $('#syncp'); if (!el) return;
+  const inFrame = window.top !== window;
+  if (!SY.code){
+    el.innerHTML = `
+      <p>Ten sam kod na komputerze i telefonie = te same postępy. Wyniki z obu urządzeń się łączą, więc nic nie ginie, nawet jak ćwiczysz bez internetu.</p>
+      <div class="actions" style="justify-content:flex-start"><button type="button" class="btn small primary" id="sy-new">Utwórz kod</button></div>
+      <p>Masz już kod z innego urządzenia?</p>
+      <div class="line" style="flex-wrap:nowrap"><input class="field" id="sy-in" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="np. neko-sakura-12345" aria-label="Kod synchronizacji" style="font-size:16px;text-align:left"><button type="button" class="btn small" id="sy-join">Połącz</button></div>
+      ${inFrame ? '<p>W podglądzie w Claude synchronizacja nie zadziała, tylko na stronie YOMU.</p>' : ''}`;
+    $('#sy-new').onclick = async () => {
+      SY.code = newCode(); SY.err = ''; saveSY();
+      const r = await syncNow();
+      if (r === 'net'){ toast('Nie udało się połączyć z bazą. Kod zostaje, spróbuję później.'); }
+      else toast(`Kod gotowy: <b>${SY.code}</b>. Wpisz go na telefonie w Postępach.`);
+      renderSyncPanel();
+    };
+    const join = async () => {
+      const c = normCode($('#sy-in').value);
+      if (c.length < 8){ toast('Ten kod jest za krótki. Przepisz go z drugiego urządzenia.'); return; }
+      SY.code = c; SY.err = ''; saveSY();
+      $('#sy-join').textContent = 'Łączę…';
+      const r = await syncNow({mustExist: true, rerender: true});
+      if (r === 'nokod'){ SY.code = ''; saveSY(); toast('Nie ma takiego kodu. Sprawdź, czy dobrze przepisany.'); renderSyncPanel(); }
+      else if (r === 'net'){ SY.code = ''; saveSY(); toast('Nie udało się połączyć z bazą. Spróbuj za chwilę.'); renderSyncPanel(); }
+      else { unlockAch('sync'); toast('Połączono! Postępy z obu urządzeń są teraz razem.'); }
+    };
+    $('#sy-join').onclick = join;
+    $('#sy-in').addEventListener('keydown', e => { if (e.key === 'Enter') join(); });
+    return;
+  }
+  const status = SY.err
+    ? (inFrame ? 'W podglądzie w Claude synchronizacja nie działa, tylko na stronie YOMU.' : 'Ostatnio nie udało się połączyć. Postępy są bezpieczne na tym urządzeniu i wyślą się przy następnej okazji. Jeśli to trwa dłużej, baza mogła zasnąć po tygodniu bez używania: wejdź na supabase.com i kliknij w projekcie <b>Restore</b>.')
+    : SY.at ? `Zsynchronizowano ${ago(SY.at)}.` : 'Jeszcze nie zsynchronizowano.';
+  el.innerHTML = `
+    <div class="line"><span>Twój kod</span><b class="sycode">${esc(SY.code)}</b></div>
+    <p>${status}</p>
+    <div class="actions" style="justify-content:flex-start">
+      <button type="button" class="btn small primary" id="sy-now">Synchronizuj teraz</button>
+      <button type="button" class="btn small" id="sy-copy">Kopiuj kod</button>
+      <button type="button" class="btn small" id="sy-off">Odłącz to urządzenie</button>
+    </div>`;
+  $('#sy-now').onclick = async () => { $('#sy-now').textContent = 'Synchronizuję…'; const r = await syncNow({rerender: true}); toast(r === 'net' ? 'Nie udało się połączyć z bazą.' : 'Zsynchronizowano'); renderSyncPanel(); };
+  $('#sy-copy').onclick = async () => { try { await navigator.clipboard.writeText(SY.code); toast('Skopiowano kod'); } catch (e) { toast(`Kod: <b>${SY.code}</b>`); } };
+  $('#sy-off').onclick = () => { const c = SY.code; SY = {code:'', at:0, err:''}; saveSY(); toast(`Odłączono. Postępy zostają tutaj. Kod <b>${esc(c)}</b> nadal działa na innych urządzeniach.`); renderSyncPanel(); };
+}
+document.addEventListener('visibilitychange', () => {
+  if (!SY.code) return;
+  if (document.visibilityState === 'hidden'){ if (syncT) syncNow(); }
+  else if (Date.now() - SY.at > 20000 && !(S.view === 'sprint' && SP.run)) syncNow({rerender: S.view !== 'cwicz' || !P.id || P.phase === 'done'});
+});
 
 /* ---------- plan na dziś ---------- */
 // dni sprzed wprowadzenia planu liczą się po staremu (co najmniej 10 odpowiedzi)
@@ -972,6 +1121,7 @@ const ACH = [
   ['sp20','走','Sprinter','20 punktów w sprincie'],
   ['sp40','速','Błyskawica','40 punktów w sprincie'],
   ['rev','復','Powtórka','Pierwsza ukończona powtórka'],
+  ['sync','同','Dwa ekrany','Połączyłeś drugie urządzenie kodem synchronizacji'],
   ['mixfix','直','Poprawka','Ukończone ćwiczenie pomyłek'],
   ['ls20','耳','Dobry słuch','20 dobrych odpowiedzi w trybie Ze słuchu'],
   ['wr1','書','Pierwszy znak','Pierwszy znak napisany bez błędu'],
@@ -1944,9 +2094,11 @@ function renderTable(m){
       <div class="line"><span>Aplikacja na telefonie</span>${installHtml}</div>
       <p>YOMU działa też bez internetu i da się dodać do ekranu jak aplikację. Android: menu przeglądarki → <b>Zainstaluj aplikację</b> albo <b>Dodaj do ekranu głównego</b>. iPhone: w Safari <b>Udostępnij → Do ekranu początkowego</b>.</p>
     </div>
-    <h2>Przenieś postępy</h2>
+    <h2>Synchronizacja komputer – telefon</h2>
+    <div class="panel" id="syncp"></div>
+    <h2>Kopia ręczna</h2>
     <div class="panel">
-      <p>Postępy są zapisane w tej przeglądarce. Żeby przenieść je na telefon albo inną stronę, skopiuj kod tutaj i wklej go tam.</p>
+      <p>Zapasowy sposób bez internetu: skopiuj kod postępów tutaj i wklej go na drugim urządzeniu.</p>
       <div class="actions" style="justify-content:flex-start">
         <button type="button" class="btn small" id="exp">Kopiuj kod postępów</button>
         <button type="button" class="btn small" id="imp">Wklej kod</button>
@@ -1959,7 +2111,7 @@ function renderTable(m){
           ? '<button type="button" class="btn small danger" id="reset2">Tak, wyzeruj</button><button type="button" class="btn small" id="reset0">Anuluj</button>'
           : '<button type="button" class="btn small" id="reset1">Wyzeruj</button>'}</span>
       </div>
-      ${confirmReset ? '<p>Tego nie da się cofnąć. Zostaną tylko ustawienia.</p>' : ''}
+      ${confirmReset ? '<p>Tego nie da się cofnąć. Zostaną tylko ustawienia. Synchronizacja zostanie odłączona.</p>' : ''}
     </div>
     <p class="help">Kolejność kresek: <a href="https://kanjivg.tagaini.net/" target="_blank" rel="noopener">KanjiVG</a>, Ulrich Apel, CC BY-SA 3.0.</p>`;
   document.querySelectorAll('[data-tsc]').forEach(b => b.onclick = () => { tableSc = b.dataset.tsc; renderTable(m); });
@@ -1994,12 +2146,15 @@ function renderTable(m){
       } catch (e) { toast('To nie wygląda na kod postępów z YOMU. Skopiuj go jeszcze raz w całości.'); }
     };
   };
+  renderSyncPanel();
   const r1 = $('#reset1'); if (r1) r1.onclick = () => { confirmReset = true; renderTable(m); };
   const r0 = $('#reset0'); if (r0) r0.onclick = () => { confirmReset = false; renderTable(m); };
   const r2 = $('#reset2'); if (r2) r2.onclick = () => {
     const keep = {goal:S.goal, sound:S.sound, script:S.script, mode:S.mode, wmode:S.wmode, sakura:S.sakura, name:S.name, plan:{since:dayKey(), done:{}, cur:null}};
+    const hadSync = !!SY.code;
+    SY = {code:'', at:0, err:''}; saveSY();
     S = Object.assign(defaults(), keep, {view:'tabela'}); save(); confirmReset = false; P.focus = null;
-    toast('Postępy wyzerowane'); render();
+    toast(hadSync ? 'Postępy wyzerowane, a synchronizacja odłączona (inaczej wróciłyby z bazy). Utwórz nowy kod, jeśli chcesz.' : 'Postępy wyzerowane'); render();
   };
 }
 
@@ -2061,6 +2216,7 @@ if ('speechSynthesis' in window){ initVoice(); try { speechSynthesis.onvoicescha
 render();
 renderPetals();
 checkAch();
+if (SY.code) syncNow({rerender: true});
 // tryb offline: tylko gdy strona jest otwarta bezpośrednio (np. GitHub Pages), nie w podglądzie
 if ('serviceWorker' in navigator && window.top === window && (location.protocol === 'https:' || location.hostname === 'localhost')){
   navigator.serviceWorker.register('sw.js').catch(() => {});
