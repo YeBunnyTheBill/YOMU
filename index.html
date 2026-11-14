@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="YOMU">
-<title>YOMU trener kany</title>
+<title>YOMU</title>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-192.png">
@@ -160,6 +160,32 @@ main{display:flex;flex-direction:column;gap:12px}
 
 .sycode{font-family:ui-monospace,Consolas,monospace;font-size:16px;letter-spacing:.03em;color:var(--accent);word-break:break-all}
 
+/* arkusz do druku */
+#printsheet{display:none}
+@media print{
+  @page{size:A4 portrait;margin:11mm}
+  :root{color-scheme:light}
+  html,body{background:#fff!important;height:auto}
+  body{display:block;color:#000}
+  .app,.petals,.toast,dialog{display:none!important}
+  #printsheet{display:block;font-family:var(--f-ui);color:#000}
+  .ps-head{display:flex;gap:6mm;align-items:baseline;justify-content:space-between;font-size:10pt;margin-bottom:4mm;border-bottom:.3mm solid #000;padding-bottom:2mm}
+  .ps-head .jp{color:#c33}
+  .ps-row{display:flex;align-items:center;break-inside:avoid;margin-bottom:2.2mm}
+  .ps-lab{width:9mm;font-size:8.5pt;font-weight:800;color:#555}
+  .ps-cell{width:17.5mm;height:17.5mm;border:.3mm solid #888;margin-left:-.3mm;flex:none}
+  .ps-cell svg{width:100%;height:100%;display:block}
+  .ps-guide{stroke:#bbb;stroke-width:.8;stroke-dasharray:3 3}
+  .ps-model{fill:none;stroke:#000;stroke-width:4;stroke-linecap:round;stroke-linejoin:round}
+  .ps-trace{fill:none;stroke:#c9c9c9;stroke-width:4;stroke-linecap:round;stroke-linejoin:round}
+  .ps-num{font:800 11px var(--f-ui);fill:#c33;text-anchor:middle;dominant-baseline:central}
+  .ps-font{font-family:var(--f-kana);font-size:84px;fill:#000;text-anchor:middle;dominant-baseline:central}
+  .ps-font.ps-light{fill:#c9c9c9}
+  .ps-roma{font:800 34px var(--f-ui);fill:#000;text-anchor:middle;dominant-baseline:central}
+  .ps-foot{margin-top:4mm;font-size:8pt;color:#555}
+  .ps-fill{color:#555}
+}
+
 /* zeszyt */
 .bookcard{gap:12px}
 .bkboards{display:flex;gap:10px;justify-content:center;width:100%}
@@ -287,6 +313,7 @@ dialog::backdrop{background:rgba(8,11,20,.72)}
 </div>
 <dialog id="dlg"><div class="dlg" id="dlgin"></div></dialog>
 <div class="toast" id="toast" hidden></div>
+<div id="printsheet" aria-hidden="true"></div>
 
 <script>
 // CORE START
@@ -1929,7 +1956,7 @@ function renderName(final){
 }
 
 /* ---------- zeszyt: ściąga do pisania na papierze ---------- */
-const BK = {sc:null, sel:null, all:false};
+const BK = {sc:null, sel:null, all:false, pwhat:'row', ptype:'trace'};
 const KANA_NOTES = {
   'は':'Gdy jest cząstką (temat zdania), czyta się „wa”: わたしは… = „ja…”.',
   'へ':'Gdy jest cząstką kierunku, czyta się „e”: にほんへ = „do Japonii”.',
@@ -1961,12 +1988,30 @@ function renderBook(m){
       <button type="button" data-bsc="k" aria-pressed="${sc==='k'}">Katakana<span class="jp" lang="ja">ア</span></button>
     </div></div>
     <div id="bdetail"></div>
+    <div class="panel" id="printp">
+      <div class="line"><strong>Arkusz do druku</strong><span class="muted" style="font-size:13px">A4, kratki 17 mm</span></div>
+      <div class="seg" role="group" aria-label="Co wydrukować">
+        <button type="button" data-pw="char" aria-pressed="${BK.pwhat==='char'}">Ten znak</button>
+        <button type="button" data-pw="row" aria-pressed="${BK.pwhat==='row'}">Ten rząd</button>
+        <button type="button" data-pw="all" aria-pressed="${BK.pwhat==='all'}">Wszystkie widoczne</button>
+      </div>
+      <div class="seg" role="group" aria-label="Rodzaj arkusza">
+        <button type="button" data-pt="trace" aria-pressed="${BK.ptype==='trace'}">Z obrysowaniem</button>
+        <button type="button" data-pt="mem" aria-pressed="${BK.ptype==='mem'}">Z pamięci</button>
+      </div>
+      <p>${BK.ptype === 'trace' ? 'W każdym rzędzie: wzór z numerami kresek, 3 jasne znaki do obrysowania i puste kratki do samodzielnego pisania.' : 'W każdym rzędzie tylko romaji, w losowej kolejności, a znak piszesz z pamięci. Dobre na sprawdzian po kilku dniach.'}</p>
+      <div class="actions" style="justify-content:flex-start"><button type="button" class="btn small primary" id="ps-go">Drukuj albo zapisz PDF</button></div>
+      <p style="font-size:12px">W oknie drukowania możesz wybrać drukarkę „Zapisz jako PDF” i wydrukować później.</p>
+    </div>
     ${order.length ? groups : '<p class="help">Nie masz odblokowanego żadnego rzędu w tym alfabecie.</p>'}
     <div class="actions"><button type="button" class="btn small" id="bk-all">${BK.all ? 'Pokaż tylko odblokowane' : 'Pokaż też zablokowane znaki'}</button></div>
     <p class="help" style="text-align:left">W zeszycie: każdy znak w swojej kratce, kreski w kolejności z animacji. Zwykle idzie się od góry do dołu i od lewej do prawej. Małe ゃ ゅ ょ っ pisze się mniejsze, w lewym dolnym rogu kratki. Znaczek ✎ przy znaku: już go pisałeś w zeszycie.</p>`;
   bindPm(m);
   document.querySelectorAll('[data-bsc]').forEach(b => b.onclick = () => { BK.sc = b.dataset.bsc; BK.sel = null; renderBook(m); });
   $('#bk-all').onclick = () => { BK.all = !BK.all; renderBook(m); };
+  document.querySelectorAll('[data-pw]').forEach(b => b.onclick = () => { BK.pwhat = b.dataset.pw; renderBook(m); });
+  document.querySelectorAll('[data-pt]').forEach(b => b.onclick = () => { BK.ptype = b.dataset.pt; renderBook(m); });
+  $('#ps-go').onclick = () => printSheet();
   m.querySelectorAll('[data-bk]').forEach(b => b.onclick = () => {
     BK.sel = b.dataset.bk;
     m.querySelectorAll('[data-bk]').forEach(x => x.classList.toggle('sel', x === b));
@@ -1974,6 +2019,47 @@ function renderBook(m){
     $('#bdetail').scrollIntoView({behavior:'smooth', block:'start'});
   });
   renderBookDetail(m);
+}
+/* arkusz do druku */
+function sheetChars(){
+  const it = ITEMS[BK.sel];
+  let ids;
+  if (BK.pwhat === 'char') ids = it ? [it.id] : [];
+  else if (BK.pwhat === 'row') ids = it ? ROWS[it.sc].find(r => r.id === it.row).items : [];
+  else ids = bookOrder();
+  const out = [];
+  ids.forEach(id => [...ITEMS[id].ch].forEach(c => { if (!out.some(o => o.c === c)) out.push({c, r: KMAP[c] ? KMAP[c][0] : (KMAP[String.fromCharCode(c.charCodeAt(0) + 1)] || [''])[0]}); }));
+  return out;
+}
+function sheetCell(inner){ return `<div class="ps-cell"><svg viewBox="0 0 109 109"><line class="ps-guide" x1="54.5" y1="0" x2="54.5" y2="109"/><line class="ps-guide" x1="0" y1="54.5" x2="109" y2="54.5"/>${inner}</svg></div>`; }
+async function printSheet(){
+  const list = sheetChars();
+  // z pamięci: losowa kolejność, żeby nie szło z rozpędu „a i u e o”
+  if (BK.ptype === 'mem') for (let i = list.length - 1; i > 0; i--){ const j = Math.floor(Math.random() * (i + 1)); [list[i], list[j]] = [list[j], list[i]]; }
+  if (!list.length){ toast('Nie ma czego drukować. Wybierz znak w siatce.'); return; }
+  const btn = $('#ps-go'); if (btn) btn.textContent = 'Przygotowuję arkusz…';
+  const strokes = await Promise.all(list.map(x => loadStrokes(x.c).catch(() => null)));
+  const PER = 10, TRACE = BK.ptype === 'trace' ? 3 : 0;
+  const rows = list.map((x, i) => {
+    const ds = strokes[i];
+    const font = cls => `<text class="${cls}" x="54.5" y="56">${x.c}</text>`;
+    const model = BK.ptype === 'mem'
+      ? `<text class="ps-roma" x="54.5" y="56">${esc(x.r)}</text>`
+      : ds ? ds.map(d => `<path class="ps-model" d="${d}"/>`).join('') + ds.map((d, k) => { const m0 = d.match(/^M\s*(-?[\d.]+)[ ,]+(-?[\d.]+)/); return m0 ? `<text class="ps-num" x="${(+m0[1] - 5).toFixed(1)}" y="${(+m0[2] - 5).toFixed(1)}">${k + 1}</text>` : ''; }).join('') : font('ps-font');
+    const trace = ds ? ds.map(d => `<path class="ps-trace" d="${d}"/>`).join('') : font('ps-font ps-light');
+    const cells = [sheetCell(model)];
+    for (let k = 1; k < PER; k++) cells.push(sheetCell(k <= TRACE ? trace : ''));
+    return `<div class="ps-row"><span class="ps-lab">${BK.ptype === 'mem' ? '' : esc(x.r)}</span>${cells.join('')}</div>`;
+  });
+  const sc = list.some(x => /[ァ-ヿ]/.test(x.c)) ? 'Katakana' : 'Hiragana';
+  const title = BK.pwhat === 'all' ? `${sc}: wszystkie widoczne znaki` : `${sc}: ${list.map(x => x.c).join(' ')}`;
+  $('#printsheet').innerHTML = `
+    <div class="ps-head"><b>YOMU <span class="jp">読む</span></b><span>${esc(title)}${BK.ptype === 'mem' ? ' · z pamięci' : ''}</span><span class="ps-fill">Data: ____________</span></div>
+    ${rows.join('')}
+    <div class="ps-foot">${BK.ptype === 'mem' ? 'Napisz znak, który tak się czyta. Potem sprawdź w YOMU.' : 'Pierwsza kratka: wzór (cyfry = kolejność kresek). Jasne znaki: obrysuj. Puste kratki: pisz sam.'} Wzory kresek: KanjiVG, CC BY-SA 3.0.</div>`;
+  if (btn) btn.textContent = 'Drukuj albo zapisz PDF';
+  if (strokes.some(s => !s)) toast('Części wzorów kresek nie udało się pobrać, te znaki są z czcionki, bez numerów.');
+  setTimeout(() => { try { window.print(); } catch (e) { toast('Ta przeglądarka nie pozwala tu drukować.'); } }, 150);
 }
 function stepsHtml(ds){
   const grid = '<line class="s-grid" x1="54.5" y1="4" x2="54.5" y2="105"/><line class="s-grid" x1="4" y1="54.5" x2="105" y2="54.5"/>';
