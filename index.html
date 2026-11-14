@@ -189,6 +189,20 @@ main{display:flex;flex-direction:column;gap:12px}
 .wtip{display:block;margin-top:8px;font-size:14px;background:var(--panel2);border-radius:10px;padding:8px 12px;color:var(--muted)}
 .wtip .jp{font-size:1.2em}
 
+/* słowniczek */
+.dict{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
+.drow{width:100%;display:grid;grid-template-columns:minmax(84px,auto) minmax(70px,auto) 1fr;gap:12px;align-items:baseline;text-align:left;background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--line);border-radius:12px;padding:9px 12px}
+.drow:hover{border-color:var(--muted)}
+.drow.l1{border-left-color:var(--learn)}
+.drow.l2{border-left-color:var(--known)}
+.drow.l3{border-left-color:var(--good)}
+.dk{font-size:24px;font-weight:600;line-height:1.2}
+.dr{font-weight:800;font-size:14px}
+.dm{color:var(--muted);font-size:14px}
+.dict .cov{color:transparent;background:var(--panel2);border-radius:6px;user-select:none}
+.dict .cov .tag{visibility:hidden}
+@media (max-width:420px){.drow{grid-template-columns:auto 1fr;gap:2px 12px;padding:7px 12px}.drow .dm{grid-column:1 / -1}}
+
 /* zeszyt */
 .bookcard{gap:12px}
 .bkboards{display:flex;gap:10px;justify-content:center;width:100%}
@@ -840,7 +854,7 @@ const KEY = 'yomu.v1';
 function defaults(){
   return {v:1, view:'cwicz', script:'h', mode:'type', unlocked:{h:['a'], k:['a']}, stats:{}, intro:{}, wstats:{}, days:{}, best:{}, sound:false, goal:50,
     mix:{}, ach:{}, tally:{listen:0, write:0}, wmode:'look', sakura:false, name:'',
-    plan:{since:dayKey(), done:{}, cur:null}, dstat:null, pmode:'book', paper:{}, tips:{}};
+    plan:{since:dayKey(), done:{}, cur:null}, dstat:null, pmode:'book', paper:{}, tips:{}, wview:'quiz', dcover:'none'};
 }
 function migrate(s){
   const now = Date.now();
@@ -1673,8 +1687,14 @@ function missingRows(w){
   WT[w.w].forEach(u => { if (u.k === 'ー') return; const id = w.sc + ':' + (u.base || u.k); if (!isUnlocked(id)) set.add(ITEMS[id].row); });
   return [...set];
 }
+const wvSeg = () => `<div class="seg" role="group" aria-label="Widok słów">
+  <button type="button" data-wv="quiz" aria-pressed="${S.wview !== 'dict'}">Ćwicz</button>
+  <button type="button" data-wv="dict" aria-pressed="${S.wview === 'dict'}">Słowniczek</button></div>`;
+function bindWv(m){ document.querySelectorAll('[data-wv]').forEach(b => b.onclick = () => { S.wview = b.dataset.wv; save(); renderWords(m); }); }
 function renderWords(m){
+  if (S.wview === 'dict'){ renderDict(m); return; }
   m.innerHTML = `
+    <div class="controls">${wvSeg()}</div>
     <div class="controls">${scriptSeg()}</div>
     <div class="card" id="card">
       ${speakBtn()}
@@ -1684,6 +1704,7 @@ function renderWords(m){
       <div class="actions"><button type="button" class="btn" id="skip">Nie wiem</button><button type="button" class="btn primary" id="check">Sprawdź</button></div>
     </div>
     <p class="help" id="whelp"></p>`;
+  bindWv(m);
   bindScriptSeg(() => renderWords(m));
   $('#speak').onclick = () => { if (W.word) say(W.word.w); };
   $('#f').addEventListener('submit', e => { e.preventDefault(); wordSubmit(); });
@@ -1691,6 +1712,61 @@ function renderWords(m){
   $('#skip').onclick = () => { if (W.phase === 'ask') wordFail(); $('#in').focus(); };
   W.recent = [];
   nextWord();
+}
+/* słowniczek: słowa, które już przeczytasz */
+const D = {q:''};
+const plainPl = s => s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/ł/g, 'l');
+function rowGain(){
+  // który zablokowany rząd odblokuje najwięcej nowych słów
+  let best = null;
+  scripts().forEach(sc => {
+    const words = wordLists().filter(w => w.sc === sc && !wordOk(w));
+    ROWS[sc].filter(r => !S.unlocked[sc].includes(r.id)).forEach(r => {
+      const n = words.filter(w => { const mr = missingRows(w); return mr.length === 1 && mr[0] === r.id; }).length;
+      if (n && (!best || n > best.n)) best = {sc, row: r.id, n};
+    });
+  });
+  return best;
+}
+function renderDict(m){
+  const all = wordLists();
+  const avail = all.filter(wordOk);
+  const gain = rowGain();
+  const covers = [['none','Pokaż wszystko'],['roma','Zasłoń romaji'],['mean','Zasłoń znaczenie']];
+  m.innerHTML = `
+    <div class="controls">${wvSeg()}</div>
+    <div class="controls">${scriptSeg()}</div>
+    <div class="panel">
+      <p>Przeczytasz już <b>${avail.length}</b> z ${all.length} słów i fraz. ${avail.length ? 'Stuknij słowo, żeby je usłyszeć' + (S.dcover !== 'none' ? ' i odsłonić.' : '.') : ''}</p>
+      ${gain ? `<p>Najwięcej nowych słów da ci rząd <span class="jp" lang="ja">${rowLabel(gain.sc, gain.row)}</span>: <b>+${gain.n}</b>.</p>` : ''}
+      <input class="field" id="dq" type="search" autocomplete="off" spellcheck="false" placeholder="Szukaj: kot, neko, ねこ" aria-label="Szukaj słowa" value="${esc(D.q)}" style="font-size:16px;text-align:left">
+      <div class="seg" role="group" aria-label="Zasłoń, żeby się sprawdzić">${covers.map(([v, l]) => `<button type="button" data-dc="${v}" aria-pressed="${S.dcover === v}">${l}</button>`).join('')}</div>
+    </div>
+    <ul class="dict" id="dlist"></ul>
+    <div class="legend"><span><i style="background:var(--line)"></i>jeszcze nie ćwiczone</span><span><i style="background:var(--learn)"></i>w nauce</span><span><i style="background:var(--known)"></i>znane</span><span><i style="background:var(--good)"></i>opanowane</span></div>`;
+  bindWv(m);
+  bindScriptSeg(() => renderDict(m));
+  document.querySelectorAll('[data-dc]').forEach(b => b.onclick = () => { S.dcover = b.dataset.dc; save(); renderDict(m); });
+  const q = $('#dq');
+  q.addEventListener('input', () => { D.q = q.value; fillDict(avail); });
+  fillDict(avail);
+}
+function fillDict(avail){
+  const ul = $('#dlist'); if (!ul) return;
+  const q = plainPl(D.q.trim());
+  const list = avail.filter(w => !q || w.w.includes(D.q.trim()) || canon(WT[w.w]).includes(q) || plainPl(w.pl).includes(q))
+    .sort((a, b) => a.w.localeCompare(b.w, 'ja'));
+  const cov = S.dcover;
+  ul.innerHTML = list.length ? list.map(w => `<li><button type="button" class="drow l${level(S.wstats[w.w])}" data-dw="${esc(w.w)}">
+      <span class="dk jp" lang="ja">${w.w}</span>
+      <span class="dr ${cov === 'roma' ? 'cov' : ''}">${canon(WT[w.w])}</span>
+      <span class="dm ${cov === 'mean' ? 'cov' : ''}">${esc(w.pl)}${w.fr ? '<span class="tag">z anime</span>' : ''}</span>
+    </button></li>`).join('')
+    : `<li class="muted" style="padding:10px">${avail.length ? 'Nic nie pasuje do wyszukiwania.' : 'Na razie żadne słowo nie składa się tylko z twoich znaków. Dodaj kolejny rząd w Ćwicz albo w Postępach.'}</li>`;
+  ul.querySelectorAll('[data-dw]').forEach(b => b.onclick = () => {
+    b.querySelectorAll('.cov').forEach(x => x.classList.replace('cov', 'shown'));
+    say(b.dataset.dw);
+  });
 }
 function nextWord(){
   const all = wordLists();
