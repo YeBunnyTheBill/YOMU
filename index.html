@@ -811,6 +811,56 @@ function judgeStrokes(ref, user, tol = 26){
   }
   return res;
 }
+// dodatkowe poprawne znaczenia (synonimy, odmiany, potoczne) – nie wyświetlane, tylko akceptowane
+const PL_ALT = {
+  'あい':'kochanie|uczucie', 'あお':'niebieskie|niebieska|błękitny|zielony', 'いい':'dobrze|spoko|super|ok|okej|ładny|w porządku|fajnie',
+  'いえ':'domek|mieszkanie', 'うえ':'góra|nad|powyżej|u góry|wyżej|na', 'え':'obrazek|rysunek|malunek', 'かお':'buzia|mina|oblicze',
+  'きく':'słyszeć|usłyszeć|pytać|zapytać|słuchanie', 'すごい':'super|wow|świetne|świetnie|niesamowity|zajebiste|mega|ekstra|czadowe|imponujące|genialne|wspaniałe|niezłe',
+  'かわいい':'słodki|uroczy|śliczny|śliczne|kawaii|ładne|ładny|milutkie', 'ありがとう':'dzięki|dziękujemy|thx',
+  'なに':'że co|czego', 'ばか':'idiota|debil|głupi|głupia|baka|kretyn|głuptas|dureń|matoł', 'おはよう':'cześć|hej|siema|dobry',
+  'もしもし':'słucham', 'ねこ':'kotek|kicia|kotka', 'いぬ':'piesek|psiak', 'さくら':'wiśnia|sakura|kwiaty wiśni|kwitnąca wiśnia',
+  'せんせい':'nauczycielka|sensei|mistrz|profesor', 'せんぱい':'senpai|starsza koleżanka|starszy|kolega|starszy uczeń',
+  'ともだち':'kolega|kumpel|przyjaciółka|znajomy|przyjaciele|koleżanka', 'だいじょうぶ':'ok|okej|spoko|wszystko dobrze|dobrze|wszystko ok|spokojnie|nic się nie stało',
+  'いただきます':'dziękuję za jedzenie|jemy', 'おいしい':'dobre|smaczne|pyszny|smaczny|pycha|pychota',
+  'やめて':'stop|zostaw|nie rób tego|dość|starczy|przestańcie|skończ', 'まって':'poczekaj|zaczekaj|stój|chwila|moment|czekajcie',
+  'はい':'jasne|dobrze|ok|oczywiście', 'いいえ':'wcale nie|nie ma za co', 'うそ':'kłamstwo|nie wierzę|żartujesz|serio|kłamca|nieprawda|ściemniasz',
+  'ほんとう':'serio|prawda|na serio|rzeczywiście|faktycznie', 'さようなら':'żegnaj|pa|żegnajcie|na razie|do zobaczenia|sayonara',
+  'おやすみ':'śpij dobrze|kolorowych snów', 'すき':'podoba mi się|ulubiony|lubić|kochać|lubię cię|kocham cię',
+  'だめ':'nie można|źle|do niczego|nie da się|zakazane|nie ma mowy', 'はやく':'szybciej|prędko|pospiesz się|wcześnie',
+  'がんばって':'powodzenia|trzymaj się|walcz|dawaj|daj z siebie wszystko|trzymam kciuki|do boju', 'よろしく':'miło poznać|proszę|proszę o wsparcie',
+  'ごめん':'sorry|sory|sorka|przepraszam|wybacz|moja wina', 'ごめんなさい':'sorry|wybacz|wybacz mi|przykro mi',
+  'おにいちゃん':'brat|braciszek|onii-chan|oniichan', 'かみ':'kartka|bóstwo', 'みず':'wody', 'ひと':'osoba|ludzie|ktoś',
+  'やま':'góry|szczyt', 'そら':'niebiosa', 'ほし':'gwiazdy|gwiazdka', 'つき':'miesiąc', 'あめ':'cukierek|deszczyk', 'はな':'kwiatek|kwiaty',
+  'て':'dłoń|ręce', 'うみ':'ocean', 'ちから':'moc|energia|potęga', 'ゆめ':'marzenia|sny', 'こころ':'umysł|duch|serduszko|uczucia',
+  'いくぞ':'chodźmy|ruszamy|dawaj|naprzód|lecimy|do boju|zaczynamy', 'さむらい':'samurai|wojownik', 'かたな':'katana|szabla|ostrze',
+  'おに':'diabeł|potwór|oni|ogr|czart', 'きつね':'lisica|kitsune', 'ねむい':'śpiąca|zmęczony|senny|chce mi się spać|śpiące',
+  'たのしい':'zabawne|przyjemne|super|fajny|wesoły|radośnie|frajda|zabawa|fajne', 'しょうねん':'chłopiec|młodzieniec|shonen|nastolatek',
+  'しょうじょ':'dziewczynka|shojo|panna|nastolatka', 'りゅう':'ryu|smoki', 'きゅう':'9', 'ひゃく':'100',
+  'やった':'tak|yes|jest|super|wygrałem|brawo|hurra|wow', 'うるさい':'cicho|głośno|hałas|spadaj|cisza|nie gadaj',
+  'なんで':'czemu|po co|jak to', 'しかたない':'trudno|nie ma wyjścia|nic się nie da zrobić|nie ma rady|takie życie|no cóż|nic nie poradzisz|zdarza się',
+  'よし':'dobrze|ok|okej|świetnie|no to|gotowe|do roboty', 'まじで':'naprawdę|na serio|poważnie|nie gadaj|bez jaj',
+  'かっこいい':'fajny|fajne|super|czadowy|zajebisty|przystojny|świetny|cool|kozak|stylowy|fajnie wygląda',
+  'ちょっと':'chwila|moment|ej|czekaj|sekunda|zaraz', 'おねがい':'proszę cię|prośba', 'ただいま':'jestem|jestem w domu|wróciłam|już jestem',
+  'おかえり':'witaj w domu|witaj|dobrze że jesteś|wróciłeś', 'いってきます':'wychodzę|idę|do zobaczenia|pa|na razie|zaraz wracam|idę już',
+  'だれ':'kto to', 'どうして':'dlaczego|jak to', 'あぶない':'niebezpiecznie|uważaj|uwaga|groźne|ostrożnie|niebezpieczne',
+  'にげて':'uciekajcie|zwiewaj|biegnij|ratuj się', 'ぜったい':'zdecydowanie|koniecznie|na bank', 'まけない':'nie poddam się|nie przegramy|wygram|nie dam się',
+  'はじめまして':'miło mi|miło poznać|cześć|witam', 'よかった':'uff|dobrze|świetnie|na szczęście|co za ulga|ulga|udało się|to dobrze',
+  'さすが':'brawo|imponujące|tego się spodziewałem|jak zawsze|zgodnie z oczekiwaniami|niezłe', 'きをつけて':'uważaj|ostrożnie|trzymaj się|bądź ostrożny',
+  'なかま':'przyjaciele|ekipa|paczka|kompani|sojusznicy|towarzysz|kumple', 'しんじて':'wierz|zaufaj|zaufaj mi|wierz mi',
+  'すみません':'przepraszam bardzo|sorry|dziękuję|przepraszam pana|przepraszam panią', 'どうぞ':'proszę bardzo|bierz|częstuj się|śmiało|zapraszam',
+  'なるほど':'aha|rozumiem|jasne|faktycznie|ach tak|racja', 'わかった':'rozumiem|dobrze|jasne|ok|okej|zrozumiałam|wiem|kapuję',
+  'そうか':'rozumiem|acha|ach tak|no tak|tak|czyżby|aha czyli tak', 'ばかやろう':'idiota|debil|głupku|idioto|kretynie|palancie|baka',
+  'アニメ':'animacja|kreskówka|bajka', 'マンガ':'komiks', 'ゲーム':'gry|gierka', 'ラーメン':'zupa|makaron', 'コーヒー':'kawka|coffee',
+  'テレビ':'telewizja|tv', 'パン':'bułka|pieczywo|bułki', 'カメラ':'kamera|aparat fotograficzny', 'タクシー':'taxi|taksa', 'バス':'bus',
+  'ノート':'notatnik|notatki|notes', 'ペン':'pióro|pisak', 'ケーキ':'tort|ciastko|ciasteczko', 'アイス':'lód|lodzik', 'チーズ':'serek',
+  'トマト':'pomidory', 'バナナ':'banany', 'ドラマ':'drama|dramat|film', 'ヒーロー':'heros|superbohater|hero', 'パソコン':'pc|laptop|pecet',
+  'スマホ':'telefon|komórka|smartphone', 'メール':'email|e-mail|wiadomość|poczta|list', 'ニュース':'news|newsy|informacje|dziennik',
+  'サッカー':'piłka|futbol|soccer', 'ジュース':'napój|soczek', 'ミルク':'mleczko', 'ビール':'browar|piwko',
+  'オタク':'fan|maniak|nerd|fanatyk', 'コスプレ':'przebranie|kostium', 'アイドル':'gwiazda|piosenkarka', 'メイド':'maid|służąca',
+  'ピカピカ':'błyszczące|lśniący|czyściutki|błysk', 'ドキドキ':'serce|stres|podekscytowanie|ekscytacja|nerwy|emocje|serce bije',
+  'パンチ':'uderzenie|pięść|punch', 'スーパー':'sklep|market', 'ボス':'szef|szefu', 'レベル':'level|lvl', 'パワー':'siła|energia|power',
+  'チーム':'zespół|ekipa|team', 'ミッション':'zadanie', 'キャラ':'bohater|charakter'
+};
 // znaczenie po polsku: wiele poprawnych wariantów, bez ogonków, z tolerancją literówek
 const normPl = s => String(s).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/ł/g, 'l')
   .replace(/[„”"'’!?.…:;()]/g, ' ').replace(/\s+/g, ' ').trim();
@@ -818,7 +868,7 @@ function plVariants(pl){
   const noParen = pl.replace(/\([^)]*\)/g, ' ');
   const keepParen = pl.replace(/[()]/g, ' ');
   const out = new Set();
-  [noParen, keepParen].forEach(t => t.split(/[,/;]/).forEach(x => { const n = normPl(x); if (n) out.add(n); }));
+  [noParen, keepParen].forEach(t => t.split(/[,/;!?]/).forEach(x => { const n = normPl(x); if (n) out.add(n); }));
   return [...out];
 }
 function lev(a, b){
@@ -831,11 +881,14 @@ function lev(a, b){
   }
   return prev[b.length];
 }
-function meaningOk(input, pl){
+// extra: dodatkowe znaczenia (PL_ALT i te zapamiętane po „Miałem rację”)
+function meaningOk(input, pl, extra = []){
   const v = normPl(input);
   if (!v) return false;
-  return plVariants(pl).some(x => x === v || lev(x, v) <= (x.length > 7 ? 2 : x.length > 3 ? 1 : 0));
+  const vars = [...plVariants(pl), ...extra.map(normPl).filter(Boolean)];
+  return vars.some(x => x === v || lev(x, v) <= (x.length > 7 ? 2 : x.length > 3 ? 1 : 0));
 }
+const altFor = (w, mine = {}) => [...(PL_ALT[w] ? PL_ALT[w].split('|') : []), ...(mine[w] || [])];
 // łączenie postępów z dwóch urządzeń: nic nie ginie, ustawienia (cel, tryb, dźwięk…) zostają lokalne
 function mergeState(a, b){
   if (!b || b.v !== 1) return a;
@@ -854,6 +907,8 @@ function mergeState(a, b){
   out.best = maxMap(A('best'), B('best'));
   out.tally = maxMap(A('tally'), B('tally'));
   out.paper = maxMap(A('paper'), B('paper'));
+  out.alt = {...B('alt')};
+  for (const k in A('alt')) out.alt[k] = [...new Set([...(out.alt[k] || []), ...A('alt')[k]])];
   out.ach = {...A('ach')};
   for (const k in B('ach')) out.ach[k] = Math.min(out.ach[k] || Infinity, B('ach')[k]);
   // pomyłki znaku bierzemy z urządzenia, którego statystyki tego znaku wygrały
@@ -880,7 +935,7 @@ const KEY = 'yomu.v1';
 function defaults(){
   return {v:1, view:'cwicz', script:'h', mode:'type', unlocked:{h:['a'], k:['a']}, stats:{}, intro:{}, wstats:{}, days:{}, best:{}, sound:false, goal:50,
     mix:{}, ach:{}, tally:{listen:0, write:0}, wmode:'look', sakura:false, name:'',
-    plan:{since:dayKey(), done:{}, cur:null}, dstat:null, pmode:'book', paper:{}, tips:{}, wview:'quiz', dcover:'none', mstats:{}};
+    plan:{since:dayKey(), done:{}, cur:null}, dstat:null, pmode:'book', paper:{}, tips:{}, wview:'quiz', dcover:'none', mstats:{}, alt:{}};
 }
 function migrate(s){
   const now = Date.now();
@@ -1766,7 +1821,14 @@ function renderMeaning(m){
   $('#f').addEventListener('submit', e => { e.preventDefault(); meanSubmit(); });
   $('#check').onclick = () => { meanSubmit(); $('#in').focus(); };
   $('#skip').onclick = () => { if (MW.phase === 'ask') meanShow(false, ''); $('#in').focus(); };
-  $('#mine').onclick = () => { if (MW.phase === 'wrong'){ meanRecord(true); toast('Zaliczone jako dobre'); nextMeaning(); } };
+  $('#mine').onclick = () => {
+    if (MW.phase !== 'wrong') return;
+    const t = normPl(MW.typed);
+    if (t){ (S.alt[MW.word.w] = S.alt[MW.word.w] || []); if (!S.alt[MW.word.w].includes(t)) S.alt[MW.word.w].push(t); }
+    meanRecord(true);
+    toast(`Zaliczone. Od teraz „${esc(MW.typed.trim())}” będzie przechodzić przy tym słowie.`);
+    nextMeaning();
+  };
   MW.recent = [];
   nextMeaning();
 }
@@ -1805,7 +1867,7 @@ function meanSubmit(){
   if (MW.phase !== 'ask') return;
   const v = $('#in').value;
   if (!normPl(v)) return;
-  meanShow(meaningOk(v, MW.word.pl), v);
+  meanShow(meaningOk(v, MW.word.pl, altFor(MW.word.w, S.alt)), v);
 }
 function meanShow(ok, typed){
   const w = MW.word;
@@ -1821,7 +1883,7 @@ function meanShow(ok, typed){
     return;
   }
   // zła odpowiedź zapisuje się dopiero przy „Dalej” – można jeszcze kliknąć „Miałem rację”
-  MW.phase = 'wrong';
+  MW.phase = 'wrong'; MW.typed = typed;
   $('#card').classList.add('no'); shake();
   $('#hint').innerHTML = `<b>${ro}</b> znaczy: <b>${esc(w.pl)}</b>${typed ? `<br>Ty: ${esc(typed)}` : ''}`;
   $('#check').textContent = 'Dalej';
