@@ -186,6 +186,9 @@ main{display:flex;flex-direction:column;gap:12px}
   .ps-fill{color:#555}
 }
 
+.wtip{display:block;margin-top:8px;font-size:14px;background:var(--panel2);border-radius:10px;padding:8px 12px;color:var(--muted)}
+.wtip .jp{font-size:1.2em}
+
 /* zeszyt */
 .bookcard{gap:12px}
 .bkboards{display:flex;gap:10px;justify-content:center;width:100%}
@@ -837,7 +840,7 @@ const KEY = 'yomu.v1';
 function defaults(){
   return {v:1, view:'cwicz', script:'h', mode:'type', unlocked:{h:['a'], k:['a']}, stats:{}, intro:{}, wstats:{}, days:{}, best:{}, sound:false, goal:50,
     mix:{}, ach:{}, tally:{listen:0, write:0}, wmode:'look', sakura:false, name:'',
-    plan:{since:dayKey(), done:{}, cur:null}, dstat:null, pmode:'book', paper:{}};
+    plan:{since:dayKey(), done:{}, cur:null}, dstat:null, pmode:'book', paper:{}, tips:{}};
 }
 function migrate(s){
   const now = Date.now();
@@ -845,6 +848,7 @@ function migrate(s){
   s.tally = Object.assign({listen:0, write:0}, s.tally);
   if (!s.plan || !s.plan.done) s.plan = {since:dayKey(), done:{}, cur:null};
   if (!s.paper) s.paper = {};
+  if (!s.tips) s.tips = {};
   return s;
 }
 function load(){
@@ -1714,7 +1718,9 @@ function nextWord(){
   W.word = pickW; W.phase = 'ask';
   W.recent.push(pickW.w); while (W.recent.length > Math.min(4, avail.length - 1)) W.recent.shift();
   $('#big').textContent = pickW.w;
-  $('#hint').innerHTML = pickW.fr ? '<span class="tag">z anime</span>' : '&nbsp;';
+  const fresh = tipsFor(pickW.w).filter(k => !S.tips[k]);
+  $('#hint').innerHTML = (pickW.fr ? '<span class="tag">z anime</span>' : '') + (fresh.length ? `<span class="wtip"><b>Nowość:</b> ${fresh.map(k => WORD_TIPS[k].txt).join(' ')}</span>` : (pickW.fr ? '' : '&nbsp;'));
+  if (fresh.length){ fresh.forEach(k => { S.tips[k] = 1; }); save(); }
   const inp = $('#in'); if (document.activeElement !== inp) inp.focus({preventScroll:true});
 }
 function wordRecord(ok){
@@ -1745,13 +1751,19 @@ function wordSubmit(){
   else wordFail();
 }
 function wordFail(){ wordDone(false); }
+const WORD_TIPS = {
+  gem: {test: w => /[っッ]/.test(w), txt: 'Małe <span class="jp" lang="ja">っ</span> to nie „tsu”, tylko pauza: podwajasz następną spółgłoskę. かっこいい = <b>kakkoii</b>.'},
+  long: {test: w => w.includes('ー'), txt: 'Kreska <span class="jp" lang="ja">ー</span> przedłuża samogłoskę przed nią: ラーメン = <b>raamen</b> (ramen też przejdzie).'}
+};
+const tipsFor = w => Object.keys(WORD_TIPS).filter(k => WORD_TIPS[k].test(w));
 function wordDone(ok){
   wordRecord(ok);
   W.phase = 'done';
   const card = $('#card');
   card.classList.add(ok ? 'ok' : 'no');
   if (!ok) shake();
-  $('#hint').innerHTML = `<b>${canon(WT[W.word.w])}</b> · ${esc(W.word.pl)}${W.word.fr ? '<span class="tag">z anime</span>' : ''}`;
+  const tips = ok ? [] : tipsFor(W.word.w);
+  $('#hint').innerHTML = `<b>${canon(WT[W.word.w])}</b> · ${esc(W.word.pl)}${W.word.fr ? '<span class="tag">z anime</span>' : ''}${tips.length ? `<span class="wtip">${tips.map(k => WORD_TIPS[k].txt).join(' ')}</span>` : ''}`;
   $('#check').textContent = 'Dalej';
   $('#skip').hidden = true;
   if (S.sound) say(W.word.w);
@@ -1964,10 +1976,25 @@ const KANA_NOTES = {
   'ん':'Jedyny znak, który jest samą spółgłoską. Nigdy nie zaczyna słowa.',
   'ン':'Jedyny znak, który jest samą spółgłoską. Nigdy nie zaczyna słowa.'
 };
+// znaki specjalne: nie mają własnego dźwięku, ale trzeba je znać
+const BK_EXTRA = {
+  'h:っ': {id:'h:っ', sc:'h', ch:'っ', ro:['podwojenie'], lab:'pauza', row:'sp',
+    mn:'Mała つ. Nie czyta się „tsu”: to krótka pauza, przez którą podwaja się następna spółgłoska. Pisze się mniejsze, niżej w kratce.',
+    note:'W romaji widać ją jako podwójną literę: かっこいい = kakkoii, やった = yatta, まって = matte, ちょっと = chotto. Przed ch pisze się tch: まっちゃ = matcha.'},
+  'k:ッ': {id:'k:ッ', sc:'k', ch:'ッ', ro:['podwojenie'], lab:'pauza', row:'sp',
+    mn:'Mała ツ. Tak jak っ w hiraganie: krótka pauza i podwojenie następnej spółgłoski. Pisze się mniejsze, niżej w kratce.',
+    note:'ロボット = robotto, ミッション = misshon, サッカー = sakkaa.'},
+  'k:ー': {id:'k:ー', sc:'k', ch:'ー', ro:['przedłużenie'], lab:'długo', row:'sp',
+    mn:'Kreska wydłużenia, prawie tylko w katakanie. Przedłuża samogłoskę, która jest przed nią. W poziomym piśmie to pozioma kreska, w pionowym pionowa.',
+    note:'ラーメン = raamen, スーパー = suupaa, ゲーム = geemu. W YOMU przejdzie też zapis bez wydłużenia (ramen) albo z myślnikiem (ra-men).'}
+};
+const bkItem = id => ITEMS[id] || BK_EXTRA[id];
+const bkExtras = sc => Object.values(BK_EXTRA).filter(x => x.sc === sc).map(x => x.id);
 function bookOrder(){
   const sc = BK.sc;
-  return ROWS[sc].filter(r => BK.all || S.unlocked[sc].includes(r.id)).flatMap(r => r.items);
+  return [...ROWS[sc].filter(r => BK.all || S.unlocked[sc].includes(r.id)).flatMap(r => r.items), ...bkExtras(sc)];
 }
+const bkCell = id => { const it = bkItem(id); return `<button type="button" class="cell l${level(S.stats[id])}${S.paper[id] ? ' pp' : ''}${id === BK.sel ? ' sel' : ''}" data-bk="${id}"><span class="k" lang="ja">${it.ch}</span><span class="r">${it.lab || it.ro[0]}</span></button>`; };
 function renderBook(m){
   if (!BK.sc) BK.sc = S.script === 'k' ? 'k' : 'h';
   const sc = BK.sc;
@@ -1978,9 +2005,9 @@ function renderBook(m){
     if (!rows.length) return '';
     return `<h2>${title}</h2><div class="rows">${rows.map(r => {
       const on = S.unlocked[sc].includes(r.id);
-      return `<div class="row bkrow ${on ? '' : 'off'}"><div class="cells">${r.items.map(id => `<button type="button" class="cell l${level(S.stats[id])}${S.paper[id] ? ' pp' : ''}${id === BK.sel ? ' sel' : ''}" data-bk="${id}"><span class="k" lang="ja">${ITEMS[id].ch}</span><span class="r">${ITEMS[id].ro[0]}</span></button>`).join('')}</div></div>`;
+      return `<div class="row bkrow ${on ? '' : 'off'}"><div class="cells">${r.items.map(bkCell).join('')}</div></div>`;
     }).join('')}</div>`;
-  }).join('');
+  }).join('') + `<h2>Znaki specjalne</h2><div class="rows"><div class="row bkrow"><div class="cells">${bkExtras(sc).map(bkCell).join('')}</div></div></div>`;
   m.innerHTML = `
     <div class="controls">${pmSeg()}</div>
     <div class="controls"><div class="seg" role="group" aria-label="Alfabet">
@@ -2022,13 +2049,14 @@ function renderBook(m){
 }
 /* arkusz do druku */
 function sheetChars(){
-  const it = ITEMS[BK.sel];
+  const it = bkItem(BK.sel);
   let ids;
   if (BK.pwhat === 'char') ids = it ? [it.id] : [];
-  else if (BK.pwhat === 'row') ids = it ? ROWS[it.sc].find(r => r.id === it.row).items : [];
+  else if (BK.pwhat === 'row') ids = !it ? [] : BK_EXTRA[it.id] ? bkExtras(it.sc) : ROWS[it.sc].find(r => r.id === it.row).items;
   else ids = bookOrder();
   const out = [];
-  ids.forEach(id => [...ITEMS[id].ch].forEach(c => { if (!out.some(o => o.c === c)) out.push({c, r: KMAP[c] ? KMAP[c][0] : (KMAP[String.fromCharCode(c.charCodeAt(0) + 1)] || [''])[0]}); }));
+  const lab = c => { const x = Object.values(BK_EXTRA).find(e => e.ch === c); return x ? x.lab : KMAP[c] ? KMAP[c][0] : (KMAP[String.fromCharCode(c.charCodeAt(0) + 1)] || [''])[0]; };
+  ids.forEach(id => [...bkItem(id).ch].forEach(c => { if (!out.some(o => o.c === c)) out.push({c, r: lab(c)}); }));
   return out;
 }
 function sheetCell(inner){ return `<div class="ps-cell"><svg viewBox="0 0 109 109"><line class="ps-guide" x1="54.5" y1="0" x2="54.5" y2="109"/><line class="ps-guide" x1="0" y1="54.5" x2="109" y2="54.5"/>${inner}</svg></div>`; }
@@ -2072,7 +2100,7 @@ function stepsHtml(ds){
 }
 function renderBookDetail(m){
   const el = $('#bdetail'); if (!el) return;
-  const id = BK.sel, it = ITEMS[id];
+  const id = BK.sel, it = bkItem(id), extra = BK_EXTRA[id];
   if (!it){ el.innerHTML = ''; return; }
   const chars = [...it.ch];
   const order = bookOrder(), idx = order.indexOf(id);
@@ -2083,22 +2111,22 @@ function renderBookDetail(m){
     .sort((a, b) => (b.ok - a.ok) || (a.w.length - b.w.length)).slice(0, 4);
   const mark = w => w.split(it.ch).map(esc).join(`<mark>${it.ch}</mark>`);
   const mean = `
-    <p>${self ? `Ten znak sam w sobie jest też słowem: <span class="jp" lang="ja">${it.ch}</span> = <b>${esc(self[1])}</b>. Poza tym, jak każda kana, to po prostu sylaba.` : 'Pojedyncza kana to dźwięk (sylaba) i sama nic nie znaczy. Znaczenie mają słowa, w których występuje:'}</p>
+    ${extra ? `<p>${extra.note}</p><p>Słowa z tym znakiem:</p>` : `<p>${self ? `Ten znak sam w sobie jest też słowem: <span class="jp" lang="ja">${it.ch}</span> = <b>${esc(self[1])}</b>. Poza tym, jak każda kana, to po prostu sylaba.` : 'Pojedyncza kana to dźwięk (sylaba) i sama nic nie znaczy. Znaczenie mają słowa, w których występuje:'}</p>
     ${KANA_NOTES[it.ch] ? `<p>${KANA_NOTES[it.ch]}</p>` : ''}
-    ${it.sc === 'k' ? '<p>Katakaną pisze się głównie słowa z innych języków i obce imiona.</p>' : ''}
+    ${it.sc === 'k' ? '<p>Katakaną pisze się głównie słowa z innych języków i obce imiona.</p>' : ''}`}
     ${ex.length ? `<ul class="exw">${ex.map(x => `<li class="${x.ok ? '' : 'dim'}"><span class="jp" lang="ja">${mark(x.w)}</span><b>${canon(WT[x.w])}</b><span>${esc(x.pl)}</span></li>`).join('')}</ul>${ex.some(x => !x.ok) ? '<p class="muted" style="font-size:12px">Wyszarzone: masz jeszcze nieodblokowane znaki z tego słowa.</p>' : ''}` : '<p class="muted">W YOMU nie ma jeszcze słów z tym znakiem.</p>'}`;
   el.innerHTML = `
     <div class="card bookcard">
       ${speakBtn('bk-say')}
       <div class="bkboards">${chars.map((c, i) => `<div class="board ${chars.length > 1 ? 'half' : 'small'}">${BOARD_SVG('bksvg' + i)}</div>`).join('')}</div>
-      <div class="hint"><span class="jp" lang="ja" style="font-size:1.6em">${it.ch}</span> czyta się <b>${it.ro.join(' / ')}</b> · <span id="bk-n">…</span></div>
+      <div class="hint"><span class="jp" lang="ja" style="font-size:1.6em">${it.ch}</span> ${extra ? `<b>${it.ro[0]}</b>, bez własnego dźwięku` : `czyta się <b>${it.ro.join(' / ')}</b>`} · <span id="bk-n">…</span></div>
       <div class="actions">
         <button type="button" class="btn small" id="bk-prev" ${idx > 0 ? '' : 'disabled'} aria-label="Poprzedni znak">←</button>
         <button type="button" class="btn small" id="bk-play">Pokaż jeszcze raz</button>
         <button type="button" class="btn small" id="bk-next" ${idx >= 0 && idx < order.length - 1 ? '' : 'disabled'} aria-label="Następny znak">→</button>
       </div>
       <div class="bksec"><h3>Krok po kroku</h3><div class="steps" id="bk-steps"><span class="muted" style="font-size:13px">Wczytuję wzór kresek…</span></div></div>
-      ${mnemo(id) ? `<div class="bksec"><h3>Jak zapamiętać</h3><div class="mnemo" style="text-align:left">${esc(mnemo(id))}</div></div>` : ''}
+      ${(extra ? extra.mn : mnemo(id)) ? `<div class="bksec"><h3>${extra ? 'Co to za znak' : 'Jak zapamiętać'}</h3><div class="mnemo" style="text-align:left">${esc(extra ? extra.mn : mnemo(id))}</div></div>` : ''}
       <div class="bksec"><h3>Co to znaczy</h3>${mean}</div>
       <div class="actions">
         <button type="button" class="btn primary" id="bk-paper">${S.paper[id] ? `Napisane w zeszycie ✓ (${S.paper[id]}×)` : 'Napisałem w zeszycie'}</button>
@@ -2120,7 +2148,8 @@ function renderBookDetail(m){
     const cell = m.querySelector(`[data-bk="${id}"]`); if (cell) cell.classList.add('pp');
   };
   $('#bk-board').onclick = () => {
-    if (chars.length === 1) WR.pending = id;
+    if (chars.length === 1 && ITEMS[id]) WR.pending = id;
+    else if (extra){ WR.queue = [{k: it.ch, r: it.lab}]; WR.qlen = 0; WR.ch = null; }
     else { WR.queue = chars.map(c => ({k: c, r: KMAP[c] ? KMAP[c][0] : ''})); WR.qlen = 0; WR.ch = null; }
     S.pmode = 'board'; save(); render();
   };
