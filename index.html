@@ -811,6 +811,31 @@ function judgeStrokes(ref, user, tol = 26){
   }
   return res;
 }
+// znaczenie po polsku: wiele poprawnych wariantów, bez ogonków, z tolerancją literówek
+const normPl = s => String(s).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/ł/g, 'l')
+  .replace(/[„”"'’!?.…:;()]/g, ' ').replace(/\s+/g, ' ').trim();
+function plVariants(pl){
+  const noParen = pl.replace(/\([^)]*\)/g, ' ');
+  const keepParen = pl.replace(/[()]/g, ' ');
+  const out = new Set();
+  [noParen, keepParen].forEach(t => t.split(/[,/;]/).forEach(x => { const n = normPl(x); if (n) out.add(n); }));
+  return [...out];
+}
+function lev(a, b){
+  if (Math.abs(a.length - b.length) > 2) return 3;
+  let prev = Array.from({length: b.length + 1}, (_, i) => i);
+  for (let i = 1; i <= a.length; i++){
+    const cur = [i];
+    for (let j = 1; j <= b.length; j++) cur[j] = Math.min(prev[j] + 1, cur[j-1] + 1, prev[j-1] + (a[i-1] === b[j-1] ? 0 : 1));
+    prev = cur;
+  }
+  return prev[b.length];
+}
+function meaningOk(input, pl){
+  const v = normPl(input);
+  if (!v) return false;
+  return plVariants(pl).some(x => x === v || lev(x, v) <= (x.length > 7 ? 2 : x.length > 3 ? 1 : 0));
+}
 // łączenie postępów z dwóch urządzeń: nic nie ginie, ustawienia (cel, tryb, dźwięk…) zostają lokalne
 function mergeState(a, b){
   if (!b || b.v !== 1) return a;
@@ -821,6 +846,7 @@ function mergeState(a, b){
   const maxMap = (X, Y) => { const r = {...X}; for (const k in Y) r[k] = Math.max(r[k] || 0, Y[k] || 0); return r; };
   out.stats = mergeStats(A('stats'), B('stats'));
   out.wstats = mergeStats(A('wstats'), B('wstats'));
+  out.mstats = mergeStats(A('mstats'), B('mstats'));
   out.unlocked = {};
   ['h','k'].forEach(sc => { out.unlocked[sc] = [...new Set([...(A('unlocked')[sc] || []), ...(B('unlocked')[sc] || [])])]; });
   out.intro = {...B('intro'), ...A('intro')};
@@ -854,11 +880,12 @@ const KEY = 'yomu.v1';
 function defaults(){
   return {v:1, view:'cwicz', script:'h', mode:'type', unlocked:{h:['a'], k:['a']}, stats:{}, intro:{}, wstats:{}, days:{}, best:{}, sound:false, goal:50,
     mix:{}, ach:{}, tally:{listen:0, write:0}, wmode:'look', sakura:false, name:'',
-    plan:{since:dayKey(), done:{}, cur:null}, dstat:null, pmode:'book', paper:{}, tips:{}, wview:'quiz', dcover:'none'};
+    plan:{since:dayKey(), done:{}, cur:null}, dstat:null, pmode:'book', paper:{}, tips:{}, wview:'quiz', dcover:'none', mstats:{}};
 }
 function migrate(s){
   const now = Date.now();
-  [s.stats, s.wstats].forEach(o => Object.values(o).forEach(st => migrateStat(st, now)));
+  if (!s.mstats) s.mstats = {};
+  [s.stats, s.wstats, s.mstats].forEach(o => Object.values(o).forEach(st => migrateStat(st, now)));
   s.tally = Object.assign({listen:0, write:0}, s.tally);
   if (!s.plan || !s.plan.done) s.plan = {since:dayKey(), done:{}, cur:null};
   if (!s.paper) s.paper = {};
@@ -1688,11 +1715,13 @@ function missingRows(w){
   return [...set];
 }
 const wvSeg = () => `<div class="seg" role="group" aria-label="Widok słów">
-  <button type="button" data-wv="quiz" aria-pressed="${S.wview !== 'dict'}">Ćwicz</button>
+  <button type="button" data-wv="quiz" aria-pressed="${S.wview !== 'dict' && S.wview !== 'mean'}">Czytanie</button>
+  <button type="button" data-wv="mean" aria-pressed="${S.wview === 'mean'}">Znaczenie</button>
   <button type="button" data-wv="dict" aria-pressed="${S.wview === 'dict'}">Słowniczek</button></div>`;
 function bindWv(m){ document.querySelectorAll('[data-wv]').forEach(b => b.onclick = () => { S.wview = b.dataset.wv; save(); renderWords(m); }); }
 function renderWords(m){
   if (S.wview === 'dict'){ renderDict(m); return; }
+  if (S.wview === 'mean'){ renderMeaning(m); return; }
   m.innerHTML = `
     <div class="controls">${wvSeg()}</div>
     <div class="controls">${scriptSeg()}</div>
@@ -1713,6 +1742,94 @@ function renderWords(m){
   W.recent = [];
   nextWord();
 }
+/* znaczenie: widzisz słowo, wpisujesz po polsku */
+const MW = {word:null, phase:null, recent:[], typed:''};
+function renderMeaning(m){
+  m.innerHTML = `
+    <div class="controls">${wvSeg()}</div>
+    <div class="controls">${scriptSeg()}</div>
+    <div class="card" id="card">
+      ${speakBtn()}
+      <div class="big word" id="big" lang="ja"></div>
+      <div class="hint" id="hint" aria-live="polite"></div>
+      <form class="answer" id="f" autocomplete="off"><input id="in" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="go" placeholder="co to znaczy po polsku?" aria-label="Znaczenie po polsku"></form>
+      <div class="actions">
+        <button type="button" class="btn" id="skip">Nie wiem</button>
+        <button type="button" class="btn" id="mine" hidden>Miałem rację</button>
+        <button type="button" class="btn primary" id="check">Sprawdź</button>
+      </div>
+    </div>
+    <p class="help">Wpisz, co znaczy słowo. Wystarczy jedno ze znaczeń, a brak ogonków i małe literówki przejdą. Jeśli wpisałeś inne dobre znaczenie albo synonim, kliknij „Miałem rację”.</p>`;
+  bindWv(m);
+  bindScriptSeg(() => renderWords(m));
+  $('#speak').onclick = () => { if (MW.word) say(MW.word.w); };
+  $('#f').addEventListener('submit', e => { e.preventDefault(); meanSubmit(); });
+  $('#check').onclick = () => { meanSubmit(); $('#in').focus(); };
+  $('#skip').onclick = () => { if (MW.phase === 'ask') meanShow(false, ''); $('#in').focus(); };
+  $('#mine').onclick = () => { if (MW.phase === 'wrong'){ meanRecord(true); toast('Zaliczone jako dobre'); nextMeaning(); } };
+  MW.recent = [];
+  nextMeaning();
+}
+function nextMeaning(){
+  const avail = wordLists().filter(wordOk);
+  $('#card').className = 'card';
+  $('#in').value = '';
+  $('#check').textContent = 'Sprawdź';
+  $('#skip').hidden = false; $('#mine').hidden = true;
+  if (!avail.length){
+    $('#big').textContent = '';
+    $('#hint').innerHTML = 'Na razie żadne słowo nie składa się tylko z twoich znaków. Dodaj kolejny rząd.';
+    MW.word = null; MW.phase = null; return;
+  }
+  let cands = avail.filter(w => !MW.recent.includes(w.w));
+  if (!cands.length) cands = avail;
+  const ws = cands.map(w => weight(S.mstats[w.w]));
+  let r = Math.random() * ws.reduce((a, b) => a + b, 0), pw = cands[cands.length - 1];
+  for (let i = 0; i < cands.length; i++){ r -= ws[i]; if (r <= 0){ pw = cands[i]; break; } }
+  MW.word = pw; MW.phase = 'ask';
+  MW.recent.push(pw.w); while (MW.recent.length > Math.min(5, avail.length - 1)) MW.recent.shift();
+  $('#big').textContent = pw.w;
+  $('#hint').innerHTML = pw.fr ? '<span class="tag">z anime</span>' : '&nbsp;';
+  const inp = $('#in'); if (document.activeElement !== inp) inp.focus({preventScroll:true});
+}
+function meanRecord(ok){
+  const st = S.mstats[MW.word.w] || (S.mstats[MW.word.w] = {n:0, ok:0, streak:0, iv:0, due:0});
+  st.n++; if (ok){ st.ok++; st.streak++; } else st.streak = 0;
+  srs(st, ok);
+  todayStat().wd++;
+  bumpDay(); save(); renderHeader(); checkAch(); planCheck();
+}
+function meanSubmit(){
+  if (MW.phase === 'done'){ nextMeaning(); return; }
+  if (MW.phase === 'wrong'){ meanRecord(false); nextMeaning(); return; }
+  if (MW.phase !== 'ask') return;
+  const v = $('#in').value;
+  if (!normPl(v)) return;
+  meanShow(meaningOk(v, MW.word.pl), v);
+}
+function meanShow(ok, typed){
+  const w = MW.word;
+  const ro = canon(WT[w.w]);
+  if (ok){
+    meanRecord(true);
+    MW.phase = 'done';
+    $('#card').classList.add('ok');
+    $('#hint').innerHTML = `<b>${ro}</b> · ${esc(w.pl)}${w.fr ? '<span class="tag">z anime</span>' : ''}`;
+    $('#check').textContent = 'Dalej';
+    $('#skip').hidden = true;
+    if (S.sound) say(w.w);
+    return;
+  }
+  // zła odpowiedź zapisuje się dopiero przy „Dalej” – można jeszcze kliknąć „Miałem rację”
+  MW.phase = 'wrong';
+  $('#card').classList.add('no'); shake();
+  $('#hint').innerHTML = `<b>${ro}</b> znaczy: <b>${esc(w.pl)}</b>${typed ? `<br>Ty: ${esc(typed)}` : ''}`;
+  $('#check').textContent = 'Dalej';
+  $('#skip').hidden = true;
+  $('#mine').hidden = !typed;
+  if (S.sound) say(w.w);
+}
+
 /* słowniczek: słowa, które już przeczytasz */
 const D = {q:''};
 const plainPl = s => s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/ł/g, 'l');
