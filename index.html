@@ -189,6 +189,9 @@ main{display:flex;flex-direction:column;gap:12px}
 .wtip{display:block;margin-top:8px;font-size:14px;background:var(--panel2);border-radius:10px;padding:8px 12px;color:var(--muted)}
 .wtip .jp{font-size:1.2em}
 
+.chalbar{display:flex;justify-content:space-between;align-items:baseline;font-variant-numeric:tabular-nums;font-size:15px;margin-bottom:6px}
+.chalbar b{font-size:20px}
+
 /* słowniczek */
 .dict{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
 .drow{width:100%;display:grid;grid-template-columns:minmax(84px,auto) minmax(70px,auto) 1fr;gap:12px;align-items:baseline;text-align:left;background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--line);border-radius:12px;padding:9px 12px}
@@ -935,7 +938,7 @@ const KEY = 'yomu.v1';
 function defaults(){
   return {v:1, view:'cwicz', script:'h', mode:'type', unlocked:{h:['a'], k:['a']}, stats:{}, intro:{}, wstats:{}, days:{}, best:{}, sound:false, goal:50,
     mix:{}, ach:{}, tally:{listen:0, write:0}, wmode:'look', sakura:false, name:'',
-    plan:{since:dayKey(), done:{}, cur:null}, dstat:null, pmode:'book', paper:{}, tips:{}, wview:'quiz', dcover:'none', mstats:{}, alt:{}};
+    plan:{since:dayKey(), done:{}, cur:null}, dstat:null, pmode:'book', paper:{}, tips:{}, wview:'quiz', dcover:'none', mstats:{}, alt:{}, mmode:'normal', chal:null};
 }
 function migrate(s){
   const now = Date.now();
@@ -1278,6 +1281,7 @@ const ACH = [
   ['sp20','走','Sprinter','20 punktów w sprincie'],
   ['sp40','速','Błyskawica','40 punktów w sprincie'],
   ['rev','復','Powtórka','Pierwsza ukończona powtórka'],
+  ['chal','全','Komplet','Wyzwanie w Znaczeniu: wszystkie słowa bez błędu'],
   ['sync','同','Dwa ekrany','Połączyłeś drugie urządzenie kodem synchronizacji'],
   ['mixfix','直','Poprawka','Ukończone ćwiczenie pomyłek'],
   ['ls20','耳','Dobry słuch','20 dobrych odpowiedzi w trybie Ze słuchu'],
@@ -1802,7 +1806,13 @@ const MW = {word:null, phase:null, recent:[], typed:''};
 function renderMeaning(m){
   m.innerHTML = `
     <div class="controls">${wvSeg()}</div>
-    <div class="controls">${scriptSeg()}</div>
+    <div class="controls">${scriptSeg()}
+      <div class="seg" role="group" aria-label="Tryb">
+        <button type="button" data-mm="normal" aria-pressed="${S.mmode !== 'chal'}">Zwykły</button>
+        <button type="button" data-mm="chal" aria-pressed="${S.mmode === 'chal'}">Wyzwanie</button>
+      </div>
+    </div>
+    <div id="chalbar"></div>
     <div class="card" id="card">
       ${speakBtn()}
       <div class="big word" id="big" lang="ja"></div>
@@ -1814,8 +1824,9 @@ function renderMeaning(m){
         <button type="button" class="btn primary" id="check">Sprawdź</button>
       </div>
     </div>
-    <p class="help">Wpisz, co znaczy słowo. Wystarczy jedno ze znaczeń, a brak ogonków i małe literówki przejdą. Jeśli wpisałeś inne dobre znaczenie albo synonim, kliknij „Miałem rację”.</p>`;
+    <p class="help">${S.mmode === 'chal' ? 'Wyzwanie: każde słowo pojawia się raz. Dobra odpowiedź = słowo odpada z puli. Jedna pomyłka = wszystko od nowa. „Miałem rację” ratuje serię.' : 'Wpisz, co znaczy słowo. Wystarczy jedno ze znaczeń, a brak ogonków i małe literówki przejdą. Jeśli wpisałeś inne dobre znaczenie albo synonim, kliknij „Miałem rację”.'}</p>`;
   bindWv(m);
+  document.querySelectorAll('[data-mm]').forEach(b => b.onclick = () => { S.mmode = b.dataset.mm; save(); renderMeaning(m); });
   bindScriptSeg(() => renderWords(m));
   $('#speak').onclick = () => { if (MW.word) say(MW.word.w); };
   $('#f').addEventListener('submit', e => { e.preventDefault(); meanSubmit(); });
@@ -1826,18 +1837,76 @@ function renderMeaning(m){
     const t = normPl(MW.typed);
     if (t){ (S.alt[MW.word.w] = S.alt[MW.word.w] || []); if (!S.alt[MW.word.w].includes(t)) S.alt[MW.word.w].push(t); }
     meanRecord(true);
+    chalHit(true);
     toast(`Zaliczone. Od teraz „${esc(MW.typed.trim())}” będzie przechodzić przy tym słowie.`);
     nextMeaning();
   };
   MW.recent = [];
   nextMeaning();
 }
+/* wyzwanie: każde słowo raz, pomyłka = od nowa */
+const chalKey = () => 'chal-' + S.script;
+function newChal(){
+  const words = wordLists().filter(wordOk).map(w => w.w);
+  S.chal = {sc: S.script, left: words, total: words.length, done: 0};
+  save();
+}
+function chalOn(){ return S.mmode === 'chal'; }
+function chalHit(ok){
+  if (!chalOn() || !S.chal) return;
+  const c = S.chal;
+  if (ok){
+    c.left = c.left.filter(w => w !== MW.word.w);
+    c.done++;
+    S.best[chalKey()] = Math.max(S.best[chalKey()] || 0, c.done);
+    if (!c.left.length){ unlockAch('chal'); toast(`<span class="jp" lang="ja">完璧</span> Wszystkie ${c.total} słów bez błędu!`); }
+  } else {
+    const was = c.done;
+    newChal();
+    if (was) toast(`Od nowa! Doszedłeś do <b>${was}/${c.total}</b>.`);
+  }
+  save(); renderChalBar();
+}
+function renderChalBar(){
+  const el = $('#chalbar'); if (!el) return;
+  if (!chalOn() || !S.chal){ el.innerHTML = ''; return; }
+  const c = S.chal, best = S.best[chalKey()] || 0;
+  el.innerHTML = `<div class="chalbar"><span>Seria <b>${c.done}</b>/${c.total}</span><span class="muted">Rekord <b>${best}</b>${c.total ? `/${c.total}` : ''}</span></div><div class="timebar"><i style="width:${c.total ? c.done / c.total * 100 : 0}%"></i></div>`;
+}
 function nextMeaning(){
   const avail = wordLists().filter(wordOk);
   $('#card').className = 'card';
   $('#in').value = '';
+  $('#in').hidden = false;
   $('#check').textContent = 'Sprawdź';
   $('#skip').hidden = false; $('#mine').hidden = true;
+  if (chalOn()){
+    if (!S.chal || S.chal.sc !== S.script) newChal();
+    renderChalBar();
+    const c = S.chal;
+    if (!c.total){
+      $('#big').textContent = '';
+      $('#hint').innerHTML = 'Na razie żadne słowo nie składa się tylko z twoich znaków. Dodaj kolejny rząd.';
+      MW.word = null; MW.phase = null; return;
+    }
+    if (!c.left.length){
+      $('#big').textContent = '完璧';
+      $('#hint').innerHTML = `Wszystkie <b>${c.total}</b> słów bez ani jednej pomyłki! <span class="jp" lang="ja">完璧</span> (kanpeki) znaczy „perfekcyjnie”.`;
+      $('#card').classList.add('ok');
+      $('#in').hidden = true; $('#skip').hidden = true;
+      $('#check').textContent = 'Jeszcze raz';
+      MW.word = null; MW.phase = 'fin'; return;
+    }
+    const pick1 = c.left[Math.floor(Math.random() * c.left.length)];
+    const pw = avail.find(w => w.w === pick1) || wordLists().find(w => w.w === pick1);
+    if (!pw){ c.left = c.left.filter(w => w !== pick1); save(); nextMeaning(); return; }
+    MW.word = pw; MW.phase = 'ask';
+    $('#big').textContent = pw.w;
+    $('#hint').innerHTML = pw.fr ? '<span class="tag">z anime</span>' : '&nbsp;';
+    const inp = $('#in'); if (document.activeElement !== inp) inp.focus({preventScroll:true});
+    return;
+  }
+  renderChalBar();
   if (!avail.length){
     $('#big').textContent = '';
     $('#hint').innerHTML = 'Na razie żadne słowo nie składa się tylko z twoich znaków. Dodaj kolejny rząd.';
@@ -1862,8 +1931,9 @@ function meanRecord(ok){
   bumpDay(); save(); renderHeader(); checkAch(); planCheck();
 }
 function meanSubmit(){
+  if (MW.phase === 'fin'){ newChal(); nextMeaning(); return; }
   if (MW.phase === 'done'){ nextMeaning(); return; }
-  if (MW.phase === 'wrong'){ meanRecord(false); nextMeaning(); return; }
+  if (MW.phase === 'wrong'){ meanRecord(false); chalHit(false); nextMeaning(); return; }
   if (MW.phase !== 'ask') return;
   const v = $('#in').value;
   if (!normPl(v)) return;
@@ -1874,6 +1944,7 @@ function meanShow(ok, typed){
   const ro = canon(WT[w.w]);
   if (ok){
     meanRecord(true);
+    chalHit(true);
     MW.phase = 'done';
     $('#card').classList.add('ok');
     $('#hint').innerHTML = `<b>${ro}</b> · ${esc(w.pl)}${w.fr ? '<span class="tag">z anime</span>' : ''}`;
@@ -1885,7 +1956,7 @@ function meanShow(ok, typed){
   // zła odpowiedź zapisuje się dopiero przy „Dalej” – można jeszcze kliknąć „Miałem rację”
   MW.phase = 'wrong'; MW.typed = typed;
   $('#card').classList.add('no'); shake();
-  $('#hint').innerHTML = `<b>${ro}</b> znaczy: <b>${esc(w.pl)}</b>${typed ? `<br>Ty: ${esc(typed)}` : ''}`;
+  $('#hint').innerHTML = `<b>${ro}</b> znaczy: <b>${esc(w.pl)}</b>${typed ? `<br>Ty: ${esc(typed)}` : ''}${chalOn() && S.chal && S.chal.done ? `<br><b style="color:var(--bad)">Seria ${S.chal.done}/${S.chal.total} przepadnie po „Dalej”.</b>` : ''}`;
   $('#check').textContent = 'Dalej';
   $('#skip').hidden = true;
   $('#mine').hidden = !typed;
